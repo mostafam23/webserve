@@ -65,40 +65,20 @@ void serveClient(int client_sock, const std::string &root) {
 }
 
 int main(int argc, char *argv[]) {
-    // Default config file
-    std::string configFile = "webserv.conf";
-    bool debug = false;
 
-    // Parse command line arguments
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        if (arg == "--debug" || arg == "-d") {
-            debug = true;
-        } else if (arg == "--config" || arg == "-c") {
-            if (i + 1 < argc) {
-                configFile = argv[++i];
-            } else {
-                std::cerr << "Error: --config requires a filename" << std::endl;
-                return EXIT_FAILURE;
-            }
-        } else if (arg == "--help" || arg == "-h") {
-            std::cout << "Usage: " << argv[0] << " [options]\n"
-                      << "Options:\n"
-                      << "  -c, --config <file>  Specify config file (default: webserv.conf)\n"
-                      << "  -d, --debug          Enable debug output during validation\n"
-                      << "  -h, --help           Show this help message\n";
-            return EXIT_SUCCESS;
-        }
+    if(argc != 2)
+    {
+        std::cout << "Usage: " << argv[0] << " [options]\n";
+        return 1;
     }
+    std::string configFile = argv[1];
 
     std::cout << "=== WebServer Starting ===" << std::endl;
     std::cout << "Config file: " << configFile << std::endl;
     std::cout << std::endl;
 
-    // CRITICAL STEP: Validate configuration file before proceeding
-    // This will print detailed error messages and exit if validation fails
     std::cout << "Validating configuration file..." << std::endl;
-    ConfigParser::validateConfigFile(configFile, debug);
+    ConfigParser::validateConfigFile(configFile);
     std::cout << "✓ Configuration file is valid!" << std::endl;
     std::cout << std::endl;
 

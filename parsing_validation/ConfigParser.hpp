@@ -27,7 +27,7 @@ public:
     std::string getFilename() const;     // returns config filename
 
     // ===== Static Validation =====
-    static bool validateConfigFile(const std::string &filename, bool debug = false);
+    static bool validateConfigFile(const std::string &filename);
 };
 
 #endif

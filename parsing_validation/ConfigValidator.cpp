@@ -5,8 +5,8 @@
 #include <cstdlib>
 #include <algorithm>
 
-ConfigValidator::ConfigValidator(const std::string &file, bool debug)
-    : filename(file), debug_mode(debug) {}
+ConfigValidator::ConfigValidator(const std::string &file)
+    : filename(file) {}
 
 std::string ConfigValidator::trim(const std::string &str)
 {
@@ -17,7 +17,6 @@ std::string ConfigValidator::trim(const std::string &str)
     return str.substr(first, last - first + 1);
 }
 
-// ✅ Helper to remove inline comments
 static std::string removeComments(const std::string &line)
 {
     size_t pos = line.find('#');
@@ -68,11 +67,6 @@ bool ConfigValidator::isValidErrorCode(int code)
 
 bool ConfigValidator::validate()
 {
-    if (debug_mode)
-    {
-        std::cout << "[DEBUG] Starting validation of: " << filename << std::endl;
-    }
-
     std::ifstream file(filename.c_str());
     if (!file.is_open())
     {
@@ -94,40 +88,20 @@ bool ConfigValidator::validate()
         exit(EXIT_FAILURE);
     }
 
-    if (debug_mode)
-    {
-        std::cout << "[DEBUG] File loaded. Total lines: " << lines.size() << std::endl;
-    }
-
     if (!validateBraces())
-    {
         exit(EXIT_FAILURE);
-    }
 
     if (!validateSyntax())
-    {
         exit(EXIT_FAILURE);
-    }
 
     if (!checkDuplicateServerNames())
-    {
         exit(EXIT_FAILURE);
-    }
-
-    if (debug_mode)
-    {
-        std::cout << "[DEBUG] Validation completed successfully" << std::endl;
-    }
 
     return true;
 }
 
 bool ConfigValidator::validateBraces()
 {
-    if (debug_mode)
-    {
-        std::cout << "[DEBUG] Validating braces matching..." << std::endl;
-    }
 
     int braceCount = 0;
     for (size_t i = 0; i < lines.size(); ++i)
@@ -150,7 +124,6 @@ bool ConfigValidator::validateBraces()
             }
         }
     }
-
     if (braceCount > 0)
     {
         printError("Missing closing brace '}' - unclosed block");
@@ -161,80 +134,86 @@ bool ConfigValidator::validateBraces()
         printError("Extra closing brace '}'");
         return false;
     }
-
     return true;
 }
 
 bool ConfigValidator::validateSyntax()
 {
-    if (debug_mode)
-    {
-        std::cout << "[DEBUG] Validating syntax and directives..." << std::endl;
-    }
-
     bool foundServer = false;
     size_t i = 0;
 
     while (i < lines.size())
     {
         std::string line = trim(lines[i]);
-
         if (line.empty())
         {
             i++;
             continue;
         }
 
+        // --- Detect server block start ---
         if (line.find("server") == 0)
         {
             foundServer = true;
 
             std::string path;
             if (!validateBlockDeclaration(line, "server", i + 1, path))
-            {
                 return false;
-            }
 
-            bool hasBrace = line.find("{") != std::string::npos;
+            bool hasBrace = (line.find("{") != std::string::npos);
             i++;
 
+            // --- If no brace on same line, find next '{' ---
             if (!hasBrace)
             {
-                if (i < lines.size())
+                bool foundBrace = false;
+
+                while (i < lines.size())
                 {
                     std::string nextLine = trim(lines[i]);
-                    if (nextLine != "{")
+
+                    if (nextLine.empty())
                     {
-                        if (nextLine.find("{") == 0)
+                        i++;
+                        continue;
+                    }
+                    if (nextLine == "{")
+                    {
+                        foundBrace = true;
+                        i++;
+                        break;
+                    }
+                    else if (nextLine.find("{") == 0)
+                    {
+                        std::string afterBrace = trim(nextLine.substr(1));
+                        if (!afterBrace.empty())
                         {
-                            std::string afterBrace = nextLine.substr(1);
-                            afterBrace = trim(afterBrace);
-                            if (!afterBrace.empty())
-                            {
-                                printError("Unexpected text '" + afterBrace + "' after opening brace '{'", i + 1);
-                                return false;
-                            }
-                        }
-                        else
-                        {
-                            printError("Missing opening brace '{' after 'server' directive", i + 1);
+                            printError("Unexpected text '" + afterBrace + "' after opening brace '{'", i + 1);
                             return false;
                         }
+                        foundBrace = true;
+                        i++;
+                        break;
                     }
-                    i++;
+                    else
+                    {
+                        printError("Missing opening brace '{' after 'server' directive", i + 1);
+                        return false;
+                    }
+                }
+                if (!foundBrace)
+                {
+                    printError("Missing opening brace '{' for 'server' block", i);
+                    return false;
                 }
             }
-
             if (!validateServerBlock(i))
-            {
                 return false;
-            }
+            continue;
         }
-        else
-        {
-            printError("Unexpected directive outside server block: '" + line + "'", i + 1);
-            return false;
-        }
+        printError("Unexpected directive outside server block: '" + line + "'", i + 1);
+        std::cout << "hiii" << std::endl;
+        return false;
     }
 
     if (!foundServer)
@@ -245,6 +224,7 @@ bool ConfigValidator::validateSyntax()
 
     return true;
 }
+
 
 bool ConfigValidator::validateServerBlock(size_t &idx)
 {
@@ -502,10 +482,6 @@ bool ConfigValidator::validateDirective(const std::string &line, int lineNum, bo
 
 bool ConfigValidator::checkDuplicateServerNames()
 {
-    if (debug_mode)
-    {
-        std::cout << "[DEBUG] Checking for duplicate server names..." << std::endl;
-    }
 
     std::set<std::string> serverNames;
     bool inServer = false;
@@ -516,8 +492,8 @@ bool ConfigValidator::checkDuplicateServerNames()
 
         if (line.empty())
             continue;
-
-        if (line.find("server") == 0 && line.find("server_name") != 0)
+        
+        if (line.find("server") == 0)
         {
             inServer = true;
         }
@@ -563,7 +539,6 @@ bool ConfigValidator::validateBlockDeclaration(const std::string &line, const st
     {
         remaining = line.substr(8);
     }
-
     remaining = trim(remaining);
 
     if (remaining.empty())

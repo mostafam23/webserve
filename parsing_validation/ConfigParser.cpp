@@ -9,9 +9,9 @@ ConfigParser::ConfigParser(const std::string &file)
     this->filename = file;
 }
 
-bool ConfigParser::validateConfigFile(const std::string &filename, bool debug)
+bool ConfigParser::validateConfigFile(const std::string &filename)
 {
-    ConfigValidator validator(filename, debug);
+    ConfigValidator validator(filename);
     return validator.validate();
 }
 

@@ -9,7 +9,6 @@ class ConfigValidator {
 private:
     std::string filename;
     std::vector<std::string> lines;
-    bool debug_mode;
 
     // Helper functions
     std::string trim(const std::string &str);
@@ -27,10 +26,10 @@ private:
     bool validateDirective(const std::string &line, int lineNum, bool inLocation);
     bool checkDuplicateServerNames();
     bool validateBlockDeclaration(const std::string &line, const std::string &blockType, 
-                                   int lineNum, std::string &path);  // ✅ ADD THIS LINE
+                                   int lineNum, std::string &path);
 
 public:
-    ConfigValidator(const std::string &filename, bool debug = false);
+    ConfigValidator(const std::string &filename);
     bool validate();
 };
 
