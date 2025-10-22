@@ -2,6 +2,7 @@
 #define CONFIGPARSER_HPP
 
 #include "ConfigStructs.hpp"
+#include "ConfigValidator.hpp"
 #include <string>
 #include <fstream>
 #include <sstream>
@@ -19,6 +20,9 @@ public:
     ConfigParser(const std::string &filename);
     Server parseServer();
     std::string getFilename() const;
+    
+    // Validates config file before parsing
+    static bool validateConfigFile(const std::string &filename, bool debug = false);
 };
 
 #endif

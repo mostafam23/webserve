@@ -2,7 +2,8 @@ CXX = g++
 CXXFLAGS = -Wall -Wextra -Werror -std=c++98
 
 SRCS = main.cpp \
-	   parsing/ConfigParser.cpp
+	   parsingANDvalidation/ConfigParser.cpp \
+	   parsingANDvalidation/ConfigValidator.cpp
 
 OBJS = $(SRCS:.cpp=.o)
 

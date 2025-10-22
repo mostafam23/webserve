@@ -1,23 +1,21 @@
-#include "parsing/ConfigParser.hpp"
+#include "parsingANDvalidation/ConfigParser.hpp"
+#include "parsingANDvalidation/ConfigValidator.hpp"
 #include <iostream>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
 #include <fstream>
 #include <sstream>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <cerrno>
+#include <cstring>
 
 static std::string intToString(int n) {
     std::ostringstream oss;
     oss << n;
     return oss.str();
 }
-
-#include <sys/stat.h>
-#include <dirent.h>
-#include <cerrno>
-#include <cstring>
-#include <sstream>
-#include <fstream>
 
 bool isDirectory(const std::string &path) {
     struct stat s;
@@ -66,13 +64,62 @@ void serveClient(int client_sock, const std::string &root) {
     send(client_sock, response.c_str(), response.size(), 0);
 }
 
+int main(int argc, char *argv[]) {
+    // Default config file
+    std::string configFile = "webserv.conf";
+    bool debug = false;
 
-int main() {
-    ConfigParser parser("webserv.conf");
+    // Parse command line arguments
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--debug" || arg == "-d") {
+            debug = true;
+        } else if (arg == "--config" || arg == "-c") {
+            if (i + 1 < argc) {
+                configFile = argv[++i];
+            } else {
+                std::cerr << "Error: --config requires a filename" << std::endl;
+                return EXIT_FAILURE;
+            }
+        } else if (arg == "--help" || arg == "-h") {
+            std::cout << "Usage: " << argv[0] << " [options]\n"
+                      << "Options:\n"
+                      << "  -c, --config <file>  Specify config file (default: webserv.conf)\n"
+                      << "  -d, --debug          Enable debug output during validation\n"
+                      << "  -h, --help           Show this help message\n";
+            return EXIT_SUCCESS;
+        }
+    }
+
+    std::cout << "=== WebServer Starting ===" << std::endl;
+    std::cout << "Config file: " << configFile << std::endl;
+    std::cout << std::endl;
+
+    // CRITICAL STEP: Validate configuration file before proceeding
+    // This will print detailed error messages and exit if validation fails
+    std::cout << "Validating configuration file..." << std::endl;
+    ConfigParser::validateConfigFile(configFile, debug);
+    std::cout << "✓ Configuration file is valid!" << std::endl;
+    std::cout << std::endl;
+
+    // Parse the configuration (now safe because validation passed)
+    std::cout << "Parsing configuration..." << std::endl;
+    ConfigParser parser(configFile);
     Server server = parser.parseServer();
+    std::cout << "✓ Configuration parsed successfully!" << std::endl;
+    std::cout << std::endl;
 
+    // Display configuration
     int port = server.listen;
     std::string root = server.root.empty() ? "./www" : server.root;
+    
+    std::cout << "Server Configuration:" << std::endl;
+    std::cout << "  Port:        " << port << std::endl;
+    std::cout << "  Server Name: " << server.server_name << std::endl;
+    std::cout << "  Root:        " << root << std::endl;
+    std::cout << "  Index:       " << server.index << std::endl;
+    std::cout << std::endl;
+
     // Create a TCP socket using IPv4.
     // AF_INET       : Specifies IPv4 addresses.
     // SOCK_STREAM   : Specifies a connection-oriented, reliable, byte-stream socket (TCP).
@@ -82,7 +129,15 @@ int main() {
     int server_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (server_sock < 0) {
         perror("socket");
-        return 1;
+        return EXIT_FAILURE;
+    }
+
+    // Set SO_REUSEADDR to avoid "Address already in use" errors
+    int opt = 1;
+    if (setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        perror("setsockopt");
+        close(server_sock);
+        return EXIT_FAILURE;
     }
 
     struct sockaddr_in addr;
@@ -92,19 +147,32 @@ int main() {
 
     if (bind(server_sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("bind");
-        return 1;
+        close(server_sock);
+        return EXIT_FAILURE;
     }
 
-    listen(server_sock, 10);
-    std::cout << "✅ Server listening on http://localhost:" << port << std::endl;
+    if (listen(server_sock, 10) < 0) {
+        perror("listen");
+        close(server_sock);
+        return EXIT_FAILURE;
+    }
 
+    std::cout << "✅ Server listening on http://localhost:" << port << std::endl;
+    std::cout << "Press Ctrl+C to stop the server" << std::endl;
+    std::cout << std::endl;
+
+    // Main server loop
     while (true) {
         int client_sock = accept(server_sock, NULL, NULL);
-        if (client_sock < 0)
+        if (client_sock < 0) {
+            perror("accept");
             continue;
+        }
+        
         serveClient(client_sock, root);
         close(client_sock);
     }
+    
     close(server_sock);
-    return 0;
+    return EXIT_SUCCESS;
 }

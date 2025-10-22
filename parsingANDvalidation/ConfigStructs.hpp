@@ -10,6 +10,12 @@ struct Location {
     std::set<std::string> methods;
     std::string root;
     std::string cgi_extension;
+
+    Location() {
+        path = "";
+        root = "";
+        cgi_extension = "";
+    }
 };
 
 struct Server {
@@ -20,6 +26,14 @@ struct Server {
     std::map<int, std::string> error_pages;
     Location locations[10];
     int location_count;
+
+    Server() {
+        listen = 8080;
+        server_name = "localhost";
+        root = "./www";
+        index = "index.html";
+        location_count = 0;
+    }
 };
 
 #endif
