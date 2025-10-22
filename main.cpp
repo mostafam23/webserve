@@ -118,7 +118,7 @@ int main(int argc, char *argv[]) {
     std::cout << "  Host:        " << server.host << std::endl;
     std::cout << "  Server Name: " << server.server_name << std::endl;
     std::cout << "  Root:        " << root << std::endl;
-    std::cout << "  Max Size:        " << server.max_size << std::endl;
+    std::cout << "  Max Size:    " << server.max_size << std::endl;
     std::cout << "  Index:       " << server.index << std::endl;
     std::cout << std::endl;
 
