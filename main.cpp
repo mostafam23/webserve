@@ -66,6 +66,7 @@ void serveClient(int client_sock, const std::string &root) {
     send(client_sock, response.c_str(), response.size(), 0);
 }
 
+
 int main() {
     ConfigParser parser("webserv.conf");
     Server server = parser.parseServer();
