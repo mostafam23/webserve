@@ -13,15 +13,20 @@ class ConfigParser {
 private:
     std::string filename;
 
+    // ===== Helper functions =====
     std::string trim(const std::string &str);
     std::string getValue(const std::string &line);
+    bool lineRequiresSemicolon(const std::string &line);  // ✅ NEW: check if a line must end with ';'
 
 public:
+    // ===== Constructors =====
     ConfigParser(const std::string &filename);
-    Server parseServer();
-    std::string getFilename() const;
-    
-    // Validates config file before parsing
+
+    // ===== Core Functions =====
+    Server parseServer();                // parses and builds Server struct
+    std::string getFilename() const;     // returns config filename
+
+    // ===== Static Validation =====
     static bool validateConfigFile(const std::string &filename, bool debug = false);
 };
 

@@ -190,6 +190,8 @@ bool ConfigValidator::validateSyntax() {
 
 bool ConfigValidator::validateServerBlock(size_t &idx) {
     std::set<std::string> serverDirectives;
+    bool hasListen = false;
+    bool hasRoot = false;
 
     while (idx < lines.size()) {
         std::string line = trim(lines[idx]);
@@ -214,6 +216,14 @@ bool ConfigValidator::validateServerBlock(size_t &idx) {
             continue;
         }
 
+        // Track required directives
+        if (line.find("listen") == 0) {
+            hasListen = true;
+        }
+        if (line.find("root") == 0) {
+            hasRoot = true;
+        }
+
         // Validate server-level directives
         if (!validateDirective(line, idx + 1, false)) {
             return false;
@@ -232,80 +242,15 @@ bool ConfigValidator::validateServerBlock(size_t &idx) {
         idx++;
     }
 
-    return true;
-}
-
-bool ConfigValidator::validateLocationBlock(size_t &idx) {
-    std::string line = trim(lines[idx]);
-    
-    // Validate location path
-    size_t pathStart = line.find_first_of(" \t");
-    if (pathStart == std::string::npos) {
-        printError("Location directive missing path", idx + 1);
+    // ✅ NOW CHECK FOR REQUIRED DIRECTIVES
+    if (!hasListen) {
+        printError("Missing required 'listen' directive in server block");
         return false;
     }
-
-    std::string pathLine = line.substr(pathStart);
-    pathLine = trim(pathLine);
     
-    // Remove opening brace if present
-    size_t bracePos = pathLine.find('{');
-    if (bracePos != std::string::npos) {
-        pathLine = pathLine.substr(0, bracePos);
-        pathLine = trim(pathLine);
-    }
-
-    if (pathLine.empty()) {
-        printError("Location directive has empty path", idx + 1);
+    if (!hasRoot) {
+        printError("Missing required 'root' directive in server block");
         return false;
-    }
-
-    idx++;
-
-    // Check for opening brace
-    bool foundBrace = line.find("{") != std::string::npos;
-    if (!foundBrace) {
-        if (idx < lines.size()) {
-            std::string nextLine = trim(lines[idx]);
-            if (nextLine == "{" || nextLine.find("{") == 0) {
-                idx++;
-            } else {
-                printError("Missing opening brace '{' after location directive", idx + 1);
-                return false;
-            }
-        }
-    }
-
-    std::set<std::string> locationDirectives;
-
-    while (idx < lines.size()) {
-        line = trim(lines[idx]);
-        
-        if (line.empty() || line[0] == '#') {
-            idx++;
-            continue;
-        }
-
-        // End of location block
-        if (line == "}" || line.find("}") == 0) {
-            idx++;
-            break;
-        }
-
-        // Validate location directives
-        if (!validateDirective(line, idx + 1, true)) {
-            return false;
-        }
-
-        // Check for duplicates
-        std::string directive = line.substr(0, line.find_first_of(" \t"));
-        if (locationDirectives.count(directive)) {
-            printError("Duplicate directive '" + directive + "' in location block", idx + 1);
-            return false;
-        }
-        locationDirectives.insert(directive);
-
-        idx++;
     }
 
     return true;
@@ -477,6 +422,248 @@ bool ConfigValidator::checkDuplicateServerNames() {
         if (line == "}" && inServer) {
             inServer = false;
         }
+    }
+
+    return true;
+}
+
+
+bool ConfigValidator::validateBlockDeclaration(const std::string &line, const std::string &blockType, 
+                                               int lineNum, std::string &path) {
+    // For "server": should be exactly "server" or "server {"
+    // For "location": should be "location <path>" or "location <path> {"
+    
+    std::string remaining = line;
+    
+    // Remove the block type keyword
+    if (blockType == "server") {
+        remaining = line.substr(6); // Remove "server"
+    } else if (blockType == "location") {
+        remaining = line.substr(8); // Remove "location"
+    }
+    
+    remaining = trim(remaining);
+    
+    // Check if it's just the keyword alone
+    if (remaining.empty()) {
+        if (blockType == "location") {
+            printError("Location directive missing path", lineNum);
+            return false;
+        }
+        path = "";
+        return true; // "server" or "location <path>" alone is valid (brace on next line)
+    }
+    
+    // Check if it's keyword + opening brace
+    if (remaining == "{") {
+        if (blockType == "location") {
+            printError("Location directive missing path", lineNum);
+            return false;
+        }
+        path = "";
+        return true; // "server {" is valid
+    }
+    
+    // For location, extract path
+    if (blockType == "location") {
+        size_t bracePos = remaining.find('{');
+        
+        if (bracePos != std::string::npos) {
+            // "location <path> {"
+            path = remaining.substr(0, bracePos);
+            path = trim(path);
+            
+            // Check for garbage after brace
+            std::string afterBrace = remaining.substr(bracePos + 1);
+            afterBrace = trim(afterBrace);
+            
+            if (!afterBrace.empty()) {
+                printError("Unexpected text '" + afterBrace + "' after opening brace '{'", lineNum);
+                return false;
+            }
+            
+            if (path.empty()) {
+                printError("Location directive missing path", lineNum);
+                return false;
+            }
+        } else {
+            // "location <path>" (brace on next line)
+            path = remaining;
+            
+            // Make sure path doesn't contain invalid characters
+            if (path.find_first_of(" \t") != std::string::npos) {
+                printError("Invalid location path (contains whitespace): '" + path + "'", lineNum);
+                return false;
+            }
+        }
+        
+        return true;
+    }
+    
+    // For server, anything after "server" that's not "{" is garbage
+    if (blockType == "server") {
+        size_t bracePos = remaining.find('{');
+        
+        if (bracePos == 0) {
+            // "server {"
+            std::string afterBrace = remaining.substr(1);
+            afterBrace = trim(afterBrace);
+            
+            if (!afterBrace.empty()) {
+                printError("Unexpected text '" + afterBrace + "' after opening brace '{'", lineNum);
+                return false;
+            }
+            path = "";
+            return true;
+        } else if (bracePos != std::string::npos) {
+            // "server <garbage> {"
+            std::string garbage = remaining.substr(0, bracePos);
+            garbage = trim(garbage);
+            printError("Unexpected text '" + garbage + "' after 'server' directive", lineNum);
+            return false;
+        } else {
+            // "server <garbage>"
+            printError("Unexpected text '" + remaining + "' after 'server' directive", lineNum);
+            return false;
+        }
+    }
+    
+    return false;
+}
+
+// UPDATED validateSyntax():
+bool ConfigValidator::validateSyntax() {
+    if (debug_mode) {
+        std::cout << "[DEBUG] Validating syntax and directives..." << std::endl;
+    }
+
+    bool foundServer = false;
+    size_t i = 0;
+
+    while (i < lines.size()) {
+        std::string line = trim(lines[i]);
+        
+        // Skip empty lines and comments
+        if (line.empty() || line[0] == '#') {
+            i++;
+            continue;
+        }
+
+        // Look for server block
+        if (line.find("server") == 0) {
+            foundServer = true;
+            
+            std::string path;
+            // ✅ STRICTLY VALIDATE THE SERVER DECLARATION LINE
+            if (!validateBlockDeclaration(line, "server", i + 1, path)) {
+                return false; // ❌ STOPS HERE if garbage detected!
+            }
+            
+            bool hasBrace = line.find("{") != std::string::npos;
+            i++;
+            
+            if (!hasBrace) {
+                // Opening brace should be on next line
+                if (i < lines.size()) {
+                    std::string nextLine = trim(lines[i]);
+                    if (nextLine != "{") {
+                        // Check if it's a standalone brace or has garbage
+                        if (nextLine.find("{") == 0) {
+                            std::string afterBrace = nextLine.substr(1);
+                            afterBrace = trim(afterBrace);
+                            if (!afterBrace.empty()) {
+                                printError("Unexpected text '" + afterBrace + "' after opening brace '{'", i + 1);
+                                return false;
+                            }
+                        } else {
+                            printError("Missing opening brace '{' after 'server' directive", i + 1);
+                            return false;
+                        }
+                    }
+                    i++;
+                }
+            }
+
+            if (!validateServerBlock(i)) {
+                return false;
+            }
+        } else {
+            printError("Unexpected directive outside server block: '" + line + "'", i + 1);
+            return false;
+        }
+    }
+
+    if (!foundServer) {
+        printError("No 'server' block found in configuration file");
+        return false;
+    }
+
+    return true;
+}
+
+// UPDATED validateLocationBlock():
+bool ConfigValidator::validateLocationBlock(size_t &idx) {
+    std::string line = trim(lines[idx]);
+    
+    std::string path;
+    // ✅ STRICTLY VALIDATE THE LOCATION DECLARATION LINE
+    if (!validateBlockDeclaration(line, "location", idx + 1, path)) {
+        return false; // ❌ STOPS HERE if garbage detected!
+    }
+
+    bool hasBrace = line.find('{') != std::string::npos;
+    idx++;
+    
+    if (!hasBrace) {
+        if (idx < lines.size()) {
+            std::string nextLine = trim(lines[idx]);
+            if (nextLine != "{") {
+                if (nextLine.find("{") == 0) {
+                    std::string afterBrace = nextLine.substr(1);
+                    afterBrace = trim(afterBrace);
+                    if (!afterBrace.empty()) {
+                        printError("Unexpected text '" + afterBrace + "' after opening brace '{'", idx + 1);
+                        return false;
+                    }
+                } else {
+                    printError("Missing opening brace '{' after location directive", idx + 1);
+                    return false;
+                }
+            }
+            idx++;
+        }
+    }
+
+    std::set<std::string> locationDirectives;
+
+    while (idx < lines.size()) {
+        line = trim(lines[idx]);
+        
+        if (line.empty() || line[0] == '#') {
+            idx++;
+            continue;
+        }
+
+        // End of location block
+        if (line == "}" || line.find("}") == 0) {
+            idx++;
+            break;
+        }
+
+        // Validate location directives
+        if (!validateDirective(line, idx + 1, true)) {
+            return false;
+        }
+
+        // Check for duplicates
+        std::string directive = line.substr(0, line.find_first_of(" \t"));
+        if (locationDirectives.count(directive)) {
+            printError("Duplicate directive '" + directive + "' in location block", idx + 1);
+            return false;
+        }
+        locationDirectives.insert(directive);
+
+        idx++;
     }
 
     return true;

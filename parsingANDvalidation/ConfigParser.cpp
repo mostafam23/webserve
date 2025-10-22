@@ -1,4 +1,8 @@
 #include "ConfigParser.hpp"
+#include <fstream>
+#include <sstream>
+#include <cstdlib>
+#include <iostream>
 
 ConfigParser::ConfigParser(const std::string &file) {
     this->filename = file;
@@ -16,27 +20,39 @@ std::string ConfigParser::trim(const std::string &str) {
     return str.substr(first, last - first + 1);
 }
 
+// ✅ New helper: remove inline comments
+static std::string removeComments(const std::string &line) {
+    size_t pos = line.find('#');
+    if (pos != std::string::npos)
+        return line.substr(0, pos);
+    return line;
+}
+
 std::string ConfigParser::getValue(const std::string &line) {
-    // Find first space or tab after the directive name
     size_t pos = line.find_first_of(" \t");
     if (pos == std::string::npos) return "";
-    
-    // Skip all whitespace after the directive name
+
     size_t start = line.find_first_not_of(" \t", pos);
     if (start == std::string::npos) return "";
-    
+
     std::string val = line.substr(start);
     val = trim(val);
 
-    // Remove trailing semicolon
     if (!val.empty() && val[val.length() - 1] == ';')
         val = val.substr(0, val.length() - 1);
 
-    // Remove trailing opening brace
     if (!val.empty() && val[val.length() - 1] == '{')
         val = val.substr(0, val.length() - 1);
 
     return trim(val);
+}
+
+bool ConfigParser::lineRequiresSemicolon(const std::string &line) {
+    if (line.empty() || line[0] == '#' ||
+        line.find("{") != std::string::npos ||
+        line.find("}") != std::string::npos)
+        return false;
+    return true;
 }
 
 Server ConfigParser::parseServer() {
@@ -45,44 +61,53 @@ Server ConfigParser::parseServer() {
     std::ifstream file(filename.c_str());
     if (!file.is_open()) {
         std::cerr << "Error: Cannot open config file: " << filename << std::endl;
-        return server;
+        exit(EXIT_FAILURE);
     }
 
     std::string line;
     Location currentLoc;
     bool inLocation = false;
     bool inServer = false;
+    int lineNum = 0;
 
     while (std::getline(file, line)) {
+        lineNum++;
+
+        // ✅ Remove inline comments before parsing
+        line = removeComments(line);
         line = trim(line);
-        
-        // Skip empty lines and comments
-        if (line.empty() || line[0] == '#') 
+
+        // Skip empty lines and comment-only lines
+        if (line.empty())
             continue;
 
+        // ✅ Check for missing semicolon
+        if (lineRequiresSemicolon(line) && line[line.size() - 1] != ';') {
+            std::cerr << "Error: Missing semicolon at line " << lineNum
+                      << ": \"" << line << "\"" << std::endl;
+            exit(EXIT_FAILURE);
+        }
+
         // Detect server block start
-        if (line.find("server") == 0) {
+        if (line.find("server") == 0 && line.find("{") != std::string::npos) {
             inServer = true;
             continue;
         }
 
-        // Skip lines until we're inside a server block
+        // Skip until inside server block
         if (!inServer)
             continue;
 
         // Handle closing braces
         if (line == "}" || line.find("}") == 0) {
             if (inLocation) {
-                // End of location block
-                if (server.location_count < 10) {
+                if (server.location_count < 10)
                     server.locations[server.location_count++] = currentLoc;
-                } else {
-                    std::cerr << "Warning: Maximum 10 locations supported. Ignoring location: " 
+                else
+                    std::cerr << "Warning: Maximum 10 locations supported. Ignoring location: "
                               << currentLoc.path << std::endl;
-                }
                 inLocation = false;
             } else if (inServer) {
-                // End of server block
                 inServer = false;
                 break;
             }
@@ -95,27 +120,38 @@ Server ConfigParser::parseServer() {
             if (!val.empty()) {
                 server.listen = atoi(val.c_str());
                 if (server.listen <= 0 || server.listen > 65535) {
-                    std::cerr << "Warning: Invalid port number " << server.listen 
-                              << ", using default 8080" << std::endl;
-                    server.listen = 8080;
+                    std::cerr << "Error: Invalid port number at line " << lineNum << std::endl;
+                    exit(EXIT_FAILURE);
                 }
+            } else {
+                std::cerr << "Error: Missing value for 'listen' at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
             }
-        } 
+        }
         else if (line.find("server_name") == 0) {
             std::string val = getValue(line);
-            if (!val.empty())
-                server.server_name = val;
-        } 
+            if (val.empty()) {
+                std::cerr << "Error: Missing value for 'server_name' at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            server.server_name = val;
+        }
         else if (line.find("root") == 0 && !inLocation) {
             std::string val = getValue(line);
-            if (!val.empty())
-                server.root = val;
-        } 
+            if (val.empty()) {
+                std::cerr << "Error: Missing value for 'root' at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            server.root = val;
+        }
         else if (line.find("index") == 0 && !inLocation) {
             std::string val = getValue(line);
-            if (!val.empty())
-                server.index = val;
-        } 
+            if (val.empty()) {
+                std::cerr << "Error: Missing value for 'index' at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            server.index = val;
+        }
         else if (line.find("error_page") == 0) {
             std::istringstream iss(line);
             std::string key;
@@ -124,55 +160,63 @@ Server ConfigParser::parseServer() {
             iss >> key >> code >> value;
 
             if (value.empty()) {
-                std::cerr << "Warning: error_page missing path for code " << code << std::endl;
-                continue;
+                std::cerr << "Error: Missing value for 'error_page' at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
             }
 
-            // Remove trailing semicolon
             if (!value.empty() && value[value.size() - 1] == ';')
                 value = value.substr(0, value.size() - 1);
 
             server.error_pages[code] = value;
-        } 
-        else if (line.find("location") == 0) {
-            // Start a new location block
+        }
+        else if (line.find("location") == 0 && line.find("{") != std::string::npos) {
             inLocation = true;
-            currentLoc = Location(); // Reset to default-initialized Location
+            currentLoc = Location();
             std::string path = getValue(line);
-            if (!path.empty())
-                currentLoc.path = path;
-            else {
-                std::cerr << "Warning: location directive missing path" << std::endl;
-                inLocation = false;
+            if (path.empty()) {
+                std::cerr << "Error: Missing path for 'location' at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
             }
-        } 
+            currentLoc.path = path;
+        }
         else if (inLocation && line.find("methods") == 0) {
             std::string methods_line = getValue(line);
             std::istringstream iss(methods_line);
             std::string method;
             while (iss >> method) {
-                // Remove any trailing semicolon from individual methods
                 if (!method.empty() && method[method.size() - 1] == ';')
                     method = method.substr(0, method.size() - 1);
                 if (!method.empty())
                     currentLoc.methods.insert(method);
             }
-        } 
+        }
         else if (inLocation && line.find("root") == 0) {
             std::string val = getValue(line);
-            if (!val.empty())
-                currentLoc.root = val;
-        } 
+            if (val.empty()) {
+                std::cerr << "Error: Missing value for 'root' in location block at line "
+                          << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            currentLoc.root = val;
+        }
         else if (inLocation && line.find("cgi_extension") == 0) {
             std::string val = getValue(line);
-            if (!val.empty())
-                currentLoc.cgi_extension = val;
+            if (val.empty()) {
+                std::cerr << "Error: Missing value for 'cgi_extension' at line "
+                          << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            currentLoc.cgi_extension = val;
+        }
+        else {
+            std::cerr << "Error: Unknown or misplaced directive at line " << lineNum
+                      << ": \"" << line << "\"" << std::endl;
+            exit(EXIT_FAILURE);
         }
     }
 
     file.close();
 
-    // Validation: Check if required fields are set
     if (server.listen == 0) {
         std::cerr << "Warning: 'listen' directive not found, using default port 8080" << std::endl;
         server.listen = 8080;

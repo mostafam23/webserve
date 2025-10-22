@@ -26,6 +26,8 @@ private:
     bool validateLocationBlock(size_t &idx);
     bool validateDirective(const std::string &line, int lineNum, bool inLocation);
     bool checkDuplicateServerNames();
+    bool validateBlockDeclaration(const std::string &line, const std::string &blockType, 
+                                   int lineNum, std::string &path);  // ✅ ADD THIS LINE
 
 public:
     ConfigValidator(const std::string &filename, bool debug = false);
