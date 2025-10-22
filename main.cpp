@@ -1,5 +1,5 @@
-#include "parsingANDvalidation/ConfigParser.hpp"
-#include "parsingANDvalidation/ConfigValidator.hpp"
+#include "parsing_validation/ConfigParser.hpp"
+#include "parsing_validation/ConfigValidator.hpp"
 #include <iostream>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -115,8 +115,10 @@ int main(int argc, char *argv[]) {
     
     std::cout << "Server Configuration:" << std::endl;
     std::cout << "  Port:        " << port << std::endl;
+    std::cout << "  Host:        " << server.host << std::endl;
     std::cout << "  Server Name: " << server.server_name << std::endl;
     std::cout << "  Root:        " << root << std::endl;
+    std::cout << "  Max Size:        " << server.max_size << std::endl;
     std::cout << "  Index:       " << server.index << std::endl;
     std::cout << std::endl;
 

@@ -20,6 +20,8 @@ struct Location {
 
 struct Server {
     int listen;
+    std::string host;
+    std::string max_size;
     std::string server_name;
     std::string root;
     std::string index;
@@ -29,6 +31,8 @@ struct Server {
 
     Server() {
         listen = 8080;
+        host = "127.0.0.1";
+        max_size = "1b";
         server_name = "localhost";
         root = "./www";
         index = "index.html";
