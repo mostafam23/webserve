@@ -1,15 +1,9 @@
 #include "ConfigParser.hpp"
-#include <fstream>
-#include <sstream>
-#include <iostream>
-#include <cstdlib> // for atoi
 
-// Constructor
 ConfigParser::ConfigParser(const std::string &file) {
     this->filename = file;
 }
 
-// Helper: trim whitespace
 std::string ConfigParser::trim(const std::string &str) {
     size_t first = str.find_first_not_of(" \t");
     size_t last = str.find_last_not_of(" \t");
@@ -17,25 +11,21 @@ std::string ConfigParser::trim(const std::string &str) {
     return str.substr(first, last - first + 1);
 }
 
-// Helper: get value after key and remove trailing ';' or '{'
 std::string ConfigParser::getValue(const std::string &line) {
     size_t pos = line.find(' ');
     if (pos == std::string::npos) return "";
     std::string val = line.substr(pos + 1);
     val = trim(val);
 
-    // Remove trailing ';'
     if (!val.empty() && val[val.length() - 1] == ';')
         val = val.substr(0, val.length() - 1);
 
-    // Remove trailing '{' (for location paths)
     if (!val.empty() && val[val.length() - 1] == '{')
         val = trim(val.substr(0, val.length() - 1));
 
     return trim(val);
 }
 
-// parseServer
 Server ConfigParser::parseServer() {
     Server server;
     server.location_count = 0;
@@ -69,7 +59,6 @@ Server ConfigParser::parseServer() {
             std::string value;
             iss >> key >> code >> value;
 
-            // Remove trailing ';' if exists
             if (!value.empty() && value[value.size() - 1] == ';')
                 value = value.substr(0, value.size() - 1);
 
@@ -97,7 +86,6 @@ Server ConfigParser::parseServer() {
     return server;
 }
 
-// getFilename
 std::string ConfigParser::getFilename() const {
     return filename;
 }
