@@ -1,9 +1,20 @@
 CXX = g++
 CXXFLAGS = -Wall -Wextra -Werror -std=c++98
 
+
 SRCS = main.cpp \
-	   parsing_validation/ConfigParser.cpp \
-	   parsing_validation/ConfigValidator.cpp
+       parsing_validation/ConfigParser.cpp \
+       parsing_validation/ConfigParser_Utils.cpp \
+       parsing_validation/ConfigParser_Internal.cpp \
+       parsing_validation/ConfigValidator.cpp \
+       parsing_validation/ConfigValidator_Impl.cpp \
+       logging/Logger.cpp \
+       signals/SignalHandler.cpp \
+       concurrency/ClientRegistry.cpp \
+       http/HttpUtils.cpp \
+       utils/PathUtils.cpp \
+       server/ClientHandler.cpp \
+       server/ServerMain.cpp
 
 OBJS = $(SRCS:.cpp=.o)
 
