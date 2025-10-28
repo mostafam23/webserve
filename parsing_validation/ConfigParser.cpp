@@ -58,7 +58,9 @@ bool ConfigParser::lineRequiresSemicolon(const std::string &line)
 {
     if (line.empty() || line[0] == '#' ||
         line.find("{") != std::string::npos ||
-        line.find("}") != std::string::npos)
+        line.find("}") != std::string::npos ||
+        line.find("location") == 0 ||
+        line.find("server") == 0)
         return false;
     return true;
 }
@@ -90,21 +92,48 @@ Server ConfigParser::parseServer()
         if (line.empty())
             continue;
 
+        // Detect start of a server block
+        if (line.find("server") == 0 && !inServer)
+        {
+            std::string afterServer = line.substr(6);
+            afterServer = trim(afterServer);
+
+            if (afterServer.empty())
+            {
+                // "server" alone - look for { on next line
+                inServer = true;
+                continue;
+            }
+            else if (afterServer == "{" || afterServer.find("{") == 0)
+            {
+                // "server {" on same line
+                inServer = true;
+                continue;
+            }
+            else
+            {
+                std::cerr << "Error: Unexpected text after 'server' at line " << lineNum
+                          << ": \"" << afterServer << "\"" << std::endl;
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        // If we're waiting for opening brace after server
+        if (inServer && line == "{")
+        {
+            continue;
+        }
+
+        if (!inServer)
+            continue;
+
+        // Check for semicolons
         if (lineRequiresSemicolon(line) && line[line.size() - 1] != ';')
         {
             std::cerr << "Error: Missing semicolon at line " << lineNum
                       << ": \"" << line << "\"" << std::endl;
             exit(EXIT_FAILURE);
         }
-
-        if (line.find("server") == 0 && line.find("{") != std::string::npos)
-        {
-            inServer = true;
-            continue;
-        }
-
-        if (!inServer)
-            continue;
 
         if (line == "}" || line.find("}") == 0)
         {
@@ -125,7 +154,7 @@ Server ConfigParser::parseServer()
             continue;
         }
 
-        // Parse listen directive (supports both "port" and "host:port")
+        // Parse listen directive
         if (line.find("listen") == 0)
         {
             std::string val = getValue(line);
@@ -134,17 +163,15 @@ Server ConfigParser::parseServer()
                 size_t colonPos = val.find(':');
                 if (colonPos != std::string::npos)
                 {
-                    // Format: host:port
                     server.host = val.substr(0, colonPos);
                     std::string portStr = val.substr(colonPos + 1);
                     server.listen = atoi(portStr.c_str());
                 }
                 else
                 {
-                    // Format: just port
                     server.listen = atoi(val.c_str());
                 }
-                
+
                 if (server.listen <= 0 || server.listen > 65535)
                 {
                     std::cerr << "Error: Invalid port number at line " << lineNum << std::endl;
@@ -157,10 +184,8 @@ Server ConfigParser::parseServer()
                 exit(EXIT_FAILURE);
             }
         }
-        // Parse max_size directive (just skip it for now, or store if needed)
         else if (line.find("max_size") == 0)
         {
-            // Just acknowledge it exists, can be extended later
             std::string val = getValue(line);
             if (val.empty())
             {
@@ -218,10 +243,12 @@ Server ConfigParser::parseServer()
 
             server.error_pages[code] = value;
         }
-        else if (line.find("location") == 0 && line.find("{") != std::string::npos)
+        else if (line.find("location") == 0)
         {
             inLocation = true;
             currentLoc = Location();
+
+            // Extract path - getValue handles both "location path {" and "location path"
             std::string path = getValue(line);
             if (path.empty())
             {
@@ -229,6 +256,41 @@ Server ConfigParser::parseServer()
                 exit(EXIT_FAILURE);
             }
             currentLoc.path = path;
+
+            // Check if brace is on the same line
+            if (line.find("{") != std::string::npos)
+            {
+                // Brace is on same line, we're good
+                continue;
+            }
+
+            // No brace on same line - look for it on next non-empty lines
+            bool foundBrace = false;
+            while (std::getline(file, line))
+            {
+                lineNum++;
+                line = trim(removeComments(line));
+                
+                if (line.empty())
+                    continue;
+                
+                if (line == "{" || line.find("{") == 0)
+                {
+                    foundBrace = true;
+                    break;
+                }
+                else
+                {
+                    std::cerr << "Error: Expected '{' after 'location' at line " << lineNum << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+            }
+            
+            if (!foundBrace)
+            {
+                std::cerr << "Error: Expected '{' after 'location' but reached end of file" << std::endl;
+                exit(EXIT_FAILURE);
+            }
         }
         else if (inLocation && line.find("methods") == 0)
         {

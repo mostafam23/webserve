@@ -102,7 +102,6 @@ bool ConfigValidator::validate()
 
 bool ConfigValidator::validateBraces()
 {
-
     int braceCount = 0;
     for (size_t i = 0; i < lines.size(); ++i)
     {
@@ -151,7 +150,7 @@ bool ConfigValidator::validateSyntax()
             continue;
         }
 
-        // --- Detect server block start ---
+        // Detect server block start
         if (line.find("server") == 0)
         {
             foundServer = true;
@@ -163,7 +162,7 @@ bool ConfigValidator::validateSyntax()
             bool hasBrace = (line.find("{") != std::string::npos);
             i++;
 
-            // --- If no brace on same line, find next '{' ---
+            // If no brace on same line, find next '{'
             if (!hasBrace)
             {
                 bool foundBrace = false;
@@ -211,8 +210,8 @@ bool ConfigValidator::validateSyntax()
                 return false;
             continue;
         }
+
         printError("Unexpected directive outside server block: '" + line + "'", i + 1);
-        std::cout << "hiii" << std::endl;
         return false;
     }
 
@@ -224,7 +223,6 @@ bool ConfigValidator::validateSyntax()
 
     return true;
 }
-
 
 bool ConfigValidator::validateServerBlock(size_t &idx)
 {
@@ -319,28 +317,24 @@ bool ConfigValidator::validateDirective(const std::string &line, int lineNum, bo
             printError("'listen' directive missing value", lineNum);
             return false;
         }
-        
-        // Remove semicolon
+
         if (!value.empty() && value[value.size() - 1] == ';')
         {
             value = value.substr(0, value.size() - 1);
         }
-        
-        // Parse host:port or just port
+
         int port = 0;
         size_t colonPos = value.find(':');
         if (colonPos != std::string::npos)
         {
-            // Format: host:port
             std::string portStr = value.substr(colonPos + 1);
             port = atoi(portStr.c_str());
         }
         else
         {
-            // Format: just port
             port = atoi(value.c_str());
         }
-        
+
         if (!isValidPort(port))
         {
             std::ostringstream oss;
@@ -351,14 +345,12 @@ bool ConfigValidator::validateDirective(const std::string &line, int lineNum, bo
     }
     else if (directive == "max_size")
     {
-        // Accept max_size directive
         std::string value;
         if (!(iss >> value))
         {
             printError("'max_size' directive missing value", lineNum);
             return false;
         }
-    
     }
     else if (directive == "server_name")
     {
@@ -482,7 +474,6 @@ bool ConfigValidator::validateDirective(const std::string &line, int lineNum, bo
 
 bool ConfigValidator::checkDuplicateServerNames()
 {
-
     std::set<std::string> serverNames;
     bool inServer = false;
 
@@ -492,7 +483,7 @@ bool ConfigValidator::checkDuplicateServerNames()
 
         if (line.empty())
             continue;
-        
+
         if (line.find("server") == 0)
         {
             inServer = true;
@@ -589,6 +580,7 @@ bool ConfigValidator::validateBlockDeclaration(const std::string &line, const st
         }
         else
         {
+            // No brace on same line - this is OK now!
             path = remaining;
 
             if (path.find_first_of(" \t") != std::string::npos)
@@ -627,8 +619,10 @@ bool ConfigValidator::validateBlockDeclaration(const std::string &line, const st
         }
         else
         {
-            printError("Unexpected text '" + remaining + "' after 'server' directive", lineNum);
-            return false;
+            // No brace on same line - this is OK!
+            // We'll look for it on the next line in validateSyntax()
+            path = "";
+            return true;
         }
     }
 
@@ -648,30 +642,49 @@ bool ConfigValidator::validateLocationBlock(size_t &idx)
     bool hasBrace = line.find('{') != std::string::npos;
     idx++;
 
+    // If no brace on same line, look for it on next non-empty lines
     if (!hasBrace)
     {
-        if (idx < lines.size())
+        bool foundBrace = false;
+        while (idx < lines.size())
         {
             std::string nextLine = trim(lines[idx]);
-            if (nextLine != "{")
+
+            if (nextLine.empty())
             {
-                if (nextLine.find("{") == 0)
+                idx++;
+                continue;
+            }
+
+            if (nextLine == "{")
+            {
+                foundBrace = true;
+                idx++;
+                break;
+            }
+            else if (nextLine.find("{") == 0)
+            {
+                std::string afterBrace = nextLine.substr(1);
+                afterBrace = trim(afterBrace);
+                if (!afterBrace.empty())
                 {
-                    std::string afterBrace = nextLine.substr(1);
-                    afterBrace = trim(afterBrace);
-                    if (!afterBrace.empty())
-                    {
-                        printError("Unexpected text '" + afterBrace + "' after opening brace '{'", idx + 1);
-                        return false;
-                    }
-                }
-                else
-                {
-                    printError("Missing opening brace '{' after location directive", idx + 1);
+                    printError("Unexpected text '" + afterBrace + "' after opening brace '{'", idx + 1);
                     return false;
                 }
+                foundBrace = true;
+                idx++;
+                break;
             }
-            idx++;
+            else
+            {
+                printError("Missing opening brace '{' after location directive", idx + 1);
+                return false;
+            }
+        }
+        if (!foundBrace)
+        {
+            printError("Missing opening brace '{' for location block", idx);
+            return false;
         }
     }
 
