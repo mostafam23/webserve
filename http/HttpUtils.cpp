@@ -12,16 +12,60 @@ bool isRequestComplete(const char *buffer, size_t length) {
     if (length < 4)
         return false;
 
-    for (size_t i = 0; i <= length - 4; ++i)
+    // Find end of headers: CRLFCRLF or LFLF
+    long headers_end = -1;
+    for (size_t i = 0; i + 3 < length; ++i) {
         if (buffer[i] == '\r' && buffer[i + 1] == '\n' &&
-            buffer[i + 2] == '\r' && buffer[i + 3] == '\n')
-            return true;
+            buffer[i + 2] == '\r' && buffer[i + 3] == '\n') {
+            headers_end = (long)(i + 4);
+            break;
+        }
+    }
+    if (headers_end == -1) {
+        for (size_t i = 0; i + 1 < length; ++i) {
+            if (buffer[i] == '\n' && buffer[i + 1] == '\n') {
+                headers_end = (long)(i + 2);
+                break;
+            }
+        }
+    }
+    if (headers_end == -1)
+        return false; // headers not complete yet
 
-    for (size_t i = 0; i <= length - 2; ++i)
-        if (buffer[i] == '\n' && buffer[i + 1] == '\n')
-            return true;
+    // Parse headers to determine body expectations
+    std::string req(buffer, length);
+    std::map<std::string, std::string> headers = parseHeaders(req);
 
-    return false;
+    // Check for Transfer-Encoding: chunked
+    std::map<std::string, std::string>::iterator it = headers.find("transfer-encoding");
+    if (it != headers.end()) {
+        std::string te = it->second;
+        for (size_t i = 0; i < te.size(); ++i) te[i] = tolower(te[i]);
+        if (te.find("chunked") != std::string::npos) {
+            // For chunked, request complete when we see \r\n0\r\n\r\n after headers
+            const std::string terminator = "\r\n0\r\n\r\n";
+            if (req.find(terminator, (size_t)headers_end) != std::string::npos)
+                return true;
+            // Some clients might send final chunk with LF only (rare) -> be lenient
+            if (req.find("\n0\n\n", (size_t)headers_end) != std::string::npos)
+                return true;
+            return false;
+        }
+    }
+
+    // Otherwise, rely on Content-Length if present, else no body
+    it = headers.find("content-length");
+    if (it != headers.end()) {
+        long bodyLen = 0;
+        std::istringstream iss(it->second);
+        iss >> bodyLen;
+        if (bodyLen < 0) bodyLen = 0;
+        size_t total_needed = (size_t)headers_end + (size_t)bodyLen;
+        return length >= total_needed;
+    }
+
+    // No Content-Length and no chunked: assume no body (e.g., GET without body)
+    return true;
 }
 
 std::string buildErrorResponse(int code, const std::string &message) {
