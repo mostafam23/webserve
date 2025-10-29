@@ -13,20 +13,24 @@
 int main(int argc, char *argv[]) {
     std::string configFile;
     bool useConfig = false;
-    bool debugFlag = false;
+    bool debugFlag = true;
 
-    if (argc >= 2) {
-        for (int i = 1; i < argc; ++i) {
-            std::string arg = argv[i];
-            if (arg == "--debug") {
-                debugFlag = true;
-            } else if (configFile.empty()) {
-                configFile = arg;
-                useConfig = true;
-            }
-        }
+    if (argc == 2) {
+        configFile = argv[1];
+        useConfig = true;
+    } else if (argc > 2) {
+        std::cerr << "Usage: " << argv[0] << " [config.conf]\n";
+        return 1;
     } else {
         std::cout << "[INFO] No configuration file provided — using built-in defaults.\n";
+    }
+
+    if (useConfig) {
+        if (configFile.size() < 6 || configFile.substr(configFile.size() - 5) != ".conf") {
+            std::cerr << "[ERROR] Configuration file must end with .conf\n";
+            std::cerr << "Usage: " << argv[0] << " [config.conf]\n";
+            return 1;
+        }
     }
 
     Logger::setDebugEnabled(debugFlag);
