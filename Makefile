@@ -14,7 +14,9 @@ SRCS = main.cpp \
        http/HttpUtils.cpp \
        utils/PathUtils.cpp \
        server/ClientHandler.cpp \
-       server/ServerMain.cpp
+       server/ServerMain.cpp \
+       app/App.cpp \
+       app/ArgValidation.cpp
 
 OBJS = $(SRCS:.cpp=.o)
 
