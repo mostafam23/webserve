@@ -1,6 +1,14 @@
 #include "Logger.hpp"
 #include <iostream>
 #include <cstdlib>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
+#if defined(_WIN32)
+#  include <windows.h>
+#else
+#  include <sys/time.h>
+#endif
 
 namespace {
 bool g_debug_enabled = false;
@@ -15,6 +23,28 @@ const char* C_INFO = "\033[36m";     // cyan
 const char* C_REQ  = "\033[35m";     // magenta
 const char* C_WARN = "\033[33m";     // yellow
 const char* C_ERR  = "\033[31m";     // red
+
+static std::string nowTimestamp()
+{
+    std::time_t t = std::time(NULL);
+    std::tm tm_buf;
+#if defined(_WIN32)
+    localtime_s(&tm_buf, &t);
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    int ms = (int)st.wMilliseconds;
+#else
+    localtime_r(&t, &tm_buf);
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    int ms = (int)(tv.tv_usec / 1000);
+#endif
+    char buf[32];
+    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_buf);
+    std::ostringstream oss;
+    oss << buf << "." << std::setw(3) << std::setfill('0') << ms;
+    return oss.str();
+}
 }
 
 namespace Logger {
@@ -26,7 +56,7 @@ bool isDebugEnabled() {
 
 static void logColored(const char* color, const std::string& tag, const std::string& msg) {
     if (!isDebugEnabled()) return;
-    std::cout << color << tag << " " << msg << C_RESET << std::endl;
+    std::cout << color << tag << " [" << nowTimestamp() << "] " << msg << C_RESET << std::endl;
 }
 
 void info(const std::string &msg)    { logColored(C_INFO, "[INFO]", msg); }
@@ -34,3 +64,4 @@ void request(const std::string &msg) { logColored(C_REQ,  "[REQUEST]", msg); }
 void warn(const std::string &msg)    { logColored(C_WARN, "[WARN]", msg); }
 void error(const std::string &msg)   { logColored(C_ERR,  "[ERROR]", msg); }
 }
+
