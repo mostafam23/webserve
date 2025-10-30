@@ -21,7 +21,32 @@
 #include <vector>
 #include <sstream>
 #include <fstream>
-#include <netdb.h>
+
+// Minimal IPv4 parser: accepts dotted-quad "A.B.C.D" and fills in_addr
+static bool parseIPv4(const std::string& s, in_addr* out)
+{
+    unsigned long a = 0, b = 0, c = 0, d = 0;
+    const char* p = s.c_str();
+    char* end = 0;
+    if (!p || !*p) return false;
+
+    a = std::strtoul(p, &end, 10);
+    if (end == p || *end != '.') return false;
+    p = end + 1;
+    b = std::strtoul(p, &end, 10);
+    if (end == p || *end != '.') return false;
+    p = end + 1;
+    c = std::strtoul(p, &end, 10);
+    if (end == p || *end != '.') return false;
+    p = end + 1;
+    d = std::strtoul(p, &end, 10);
+    if (end == p || *end != '\0') return false;
+    if (a > 255 || b > 255 || c > 255 || d > 255) return false;
+
+    unsigned long ip = (a << 24) | (b << 16) | (c << 8) | d;
+    out->s_addr = htonl((uint32_t)ip);
+    return true;
+}
 
 static void setNonBlocking(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
@@ -30,7 +55,7 @@ static void setNonBlocking(int fd) {
 }
 
 int startServer(const Server &server) {
-    g_server_sock = socket(AF_INET, SOCK_STREAM, 0);
+    g_server_sock = socket(AF_INET, SOCK_STREAM, 0); 
     if (g_server_sock < 0) {
         perror("socket");
         return EXIT_FAILURE;
@@ -39,26 +64,20 @@ int startServer(const Server &server) {
     int opt = 1;
     setsockopt(g_server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    sockaddr_in addr; std::memset(&addr, 0, sizeof(addr));
+    sockaddr_in addr;
+    std::memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(server.listen);
-
-    struct addrinfo hints; std::memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE; // allow binding to 0.0.0.0
-    struct addrinfo* res = 0;
-    int gai = getaddrinfo(server.host.c_str(), NULL, &hints, &res);
-    if (gai == 0 && res && res->ai_addrlen >= sizeof(sockaddr_in)) {
-        sockaddr_in* a = (sockaddr_in*)res->ai_addr;
-        addr.sin_addr = a->sin_addr;
-        freeaddrinfo(res);
+    std::cout << server.host << std::endl;
+    if (!server.host.empty()) {
+        if (!parseIPv4(server.host, &addr.sin_addr)) {
+            // Fallback to any address if parsing fails
+            addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        }
     } else {
-        // Fallback to any address
         addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        if (res) freeaddrinfo(res);
     }
-
+    std::cout << server.host << std::endl;
     if (bind(g_server_sock, (sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("bind");
         close(g_server_sock);

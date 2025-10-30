@@ -16,7 +16,7 @@ struct DefaultConfigSource : public IConfigSource {
 };
 
 struct FileConfigSource : public IConfigSource {
-    explicit FileConfigSource(const std::string& path) : path_(path) {}
+    FileConfigSource(const std::string& path) : path_(path) {}
     Server buildServer() {
         ConfigParser::validateConfigFile(path_);
         ConfigParser parser(path_);
