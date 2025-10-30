@@ -42,12 +42,18 @@ static bool parseIPv4(const std::string& s, in_addr* out)
     d = std::strtoul(p, &end, 10);
     if (end == p || *end != '\0') return false;
     if (a > 255 || b > 255 || c > 255 || d > 255) return false;
-
-    unsigned long ip = (a << 24) | (b << 16) | (c << 8) | d;
-    out->s_addr = htonl((uint32_t)ip);
+    unsigned long ip = (a << 24) | (b << 16) | (c << 8) | d;//a*256^3 + b*256^2 + c*256 + d same as this because shifting 24 means 2^24 =>(2^8)^3=>(256)^3
+    //htonl Stands for Host TO Network Long.
+    out->s_addr = htonl((uint32_t)ip);//(uint32_t)ip Cast ip to an unsigned 32-bit integer.
+    /* Host vs Network Byte Order
+    Host byte order – how your CPU stores multi-byte integers in memory.
+    Most PCs use little-endian → least significant byte first.
+    Example: 0xC0A8010A in memory: 0A 01 A8 C0
+    Network byte order – standardized big-endian → most significant byte first.
+    Always used in networking functions like bind(), connect(), sendto().
+    Example: 0xC0A8010A in memory: C0 A8 01 0A
+    */
     return true;
-}
-
 static void setNonBlocking(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0) return;
