@@ -4,8 +4,7 @@
 #include <string>
 
 namespace Logger {
-void setDebugEnabled(bool enabled);
-bool isDebugEnabled();
+bool isLoggingEnabled();
 void info(const std::string &msg);
 void request(const std::string &msg);
 void warn(const std::string &msg);

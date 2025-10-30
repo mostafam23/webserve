@@ -5,12 +5,10 @@
 #include "../utils/PathUtils.hpp"
 #include "../logging/Logger.hpp"
 
-#include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
 #include <fstream>
 #include <map>
-#include <netinet/in.h>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -51,7 +49,9 @@ void handleClient(int client_sock, const std::string &root, const std::string &i
                 keep_alive = false;
                 break;
             }
-            usleep(10000);
+            // Sleep ~10ms using select (allowed)
+            struct timeval tv; tv.tv_sec = 0; tv.tv_usec = 10000;
+            select(0, NULL, NULL, NULL, &tv);
         }
 
         if (!request_complete || !keep_alive)
@@ -84,18 +84,9 @@ void handleClient(int client_sock, const std::string &root, const std::string &i
         if (version == "HTTP/1.0" && headers["connection"] != "Keep-Alive")
             client_wants_keepalive = false;
 
-        // Prepare client ip
-        sockaddr_in peer; socklen_t plen = sizeof(peer);
-        char ipbuf[64]; ipbuf[0] = '\0';
-        if (getpeername(client_sock, (sockaddr*)&peer, &plen) == 0)
-            std::strncpy(ipbuf, inet_ntoa(peer.sin_addr), sizeof(ipbuf)-1);
-        else
-            std::strncpy(ipbuf, "?", sizeof(ipbuf)-1);
-
         std::ostringstream rlog;
         rlog << "[REQUEST #" << request_count << "] Client " << client_sock << ": "
              << method << " " << path << " " << version
-             << " " << ipbuf
              << (client_wants_keepalive ? " (keep-alive)" : " (close)");
         Logger::request(rlog.str());
 

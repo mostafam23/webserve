@@ -3,7 +3,6 @@
 #include <iostream>
 #include <vector>
 
-#include "DebugPolicy.hpp"
 #include "ArgValidation.hpp"
 #include "ConfigSource.hpp"
 
@@ -13,23 +12,16 @@
 
 static std::vector<std::string> collectArgs(int argc, char* argv[]) {
     std::vector<std::string> args;
-    for (int i = 1; i < argc; ++i) args.push_back(argv[i]);
+    for (int i = 1; i < argc; ++i) 
+        args.push_back(argv[i]);
     return args;
 }
 
 int App::run(int argc, char* argv[]) {
-    // Strategy Pattern: choose how debug is determined.
-    AlwaysOnDebugPolicy debugPolicy;
-    Logger::setDebugEnabled(debugPolicy.isDebug());
-
     // Chain of Responsibility Pattern: validate CLI arguments in steps.
-    ArgCountHandler count;
-    ConfExtensionHandler confExt;
-    count.setNext(&confExt);
-
     std::string error;
     std::vector<std::string> args = collectArgs(argc, argv);
-    if (!count.process(args, error)) {
+    if (!validateArgs(args, error)) {
         std::cerr << "[ERROR] " << error << "\n";
         std::cerr << "Usage: " << argv[0] << " [config.conf]\n";
         return 1;
@@ -42,8 +34,7 @@ int App::run(int argc, char* argv[]) {
     if (args.empty()) src = &defaultSrc; else src = &fileSrc;
 
     std::cout << "=== WebServer Starting ===" << std::endl;
-    if (Logger::isDebugEnabled())
-        std::cout << "Debug mode: ON (colored logs enabled)\n";
+    std::cout << "Debug mode: ON (colored logs enabled)\n";
     if (!args.empty())
         std::cout << "Config file: " << args[0] << std::endl;
 

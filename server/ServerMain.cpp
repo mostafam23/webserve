@@ -21,6 +21,7 @@
 #include <vector>
 #include <sstream>
 #include <fstream>
+#include <netdb.h>
 
 static void setNonBlocking(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
@@ -38,10 +39,25 @@ int startServer(const Server &server) {
     int opt = 1;
     setsockopt(g_server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    sockaddr_in addr;
+    sockaddr_in addr; std::memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr(server.host.c_str());
     addr.sin_port = htons(server.listen);
+
+    struct addrinfo hints; std::memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_PASSIVE; // allow binding to 0.0.0.0
+    struct addrinfo* res = 0;
+    int gai = getaddrinfo(server.host.c_str(), NULL, &hints, &res);
+    if (gai == 0 && res && res->ai_addrlen >= sizeof(sockaddr_in)) {
+        sockaddr_in* a = (sockaddr_in*)res->ai_addr;
+        addr.sin_addr = a->sin_addr;
+        freeaddrinfo(res);
+    } else {
+        // Fallback to any address
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        if (res) freeaddrinfo(res);
+    }
 
     if (bind(g_server_sock, (sockaddr *)&addr, sizeof(addr)) < 0) {
         perror("bind");
@@ -139,14 +155,9 @@ int startServer(const Server &server) {
                             client_wants_keepalive = false;
 
                         // Log request
-                        sockaddr_in peer; socklen_t plen = sizeof(peer); char ipbuf[64] = {0};
-                        if (getpeername(fd, (sockaddr*)&peer, &plen) == 0)
-                            std::strncpy(ipbuf, inet_ntoa(peer.sin_addr), sizeof(ipbuf)-1);
-                        else std::strncpy(ipbuf, "?", sizeof(ipbuf)-1);
                         std::ostringstream rlog;
                         rlog << "[REQUEST #" << reqCount[fd] << "] Client " << fd << ": "
                              << method << " " << path << " " << version
-                             << " " << ipbuf
                              << (client_wants_keepalive ? " (keep-alive)" : " (close)");
                         Logger::request(rlog.str());
 

@@ -12,6 +12,7 @@
 // =========================================================
 
 int main(int argc, char *argv[]) {
+    // Facade: App acts as the application controller/facade orchestrating subsystems
     App app;
     return app.run(argc, argv);
 }

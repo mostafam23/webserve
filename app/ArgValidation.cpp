@@ -1,22 +1,24 @@
 #include "ArgValidation.hpp"
-
 static bool endsWith(const std::string& s, const std::string& suffix) {
     if (s.size() < suffix.size()) return false;
-    return s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+    size_t start = s.size() - suffix.size();
+    for (size_t i = 0; i < suffix.size(); ++i) {
+        if (s[start + i] != suffix[i]) return false;
+    }
+    return true;
 }
 
-bool ArgCountHandler::handle(const std::vector<std::string>& args, std::string& error) {
-    if (args.size() <= 1) return true;
-    error = "too many arguments";
-    return false;
-}
-
-bool ConfExtensionHandler::handle(const std::vector<std::string>& args, std::string& error) {
-    if (args.size() == 0) return true;
-    const std::string& path = args[0];
-    if (!endsWith(path, ".conf")) {
-        error = "config file must end with .conf";
+bool validateArgs(const std::vector<std::string>& args, std::string& error) {
+    if (args.size() > 1) {
+        error = "too many arguments";
         return false;
+    }
+    if (args.size() == 1) {
+        const std::string& path = args[0];
+        if (!endsWith(path, ".conf")) {
+            error = "config file must end with .conf";
+            return false;
+        }
     }
     return true;
 }
