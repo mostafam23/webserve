@@ -54,6 +54,8 @@ static bool parseIPv4(const std::string& s, in_addr* out)
     Example: 0xC0A8010A in memory: C0 A8 01 0A
     */
     return true;
+}
+
 static void setNonBlocking(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0) return;
@@ -74,7 +76,6 @@ int startServer(const Server &server) {
     std::memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(server.listen);
-    std::cout << server.host << std::endl;
     if (!server.host.empty()) {
         if (!parseIPv4(server.host, &addr.sin_addr)) {
             // Fallback to any address if parsing fails
@@ -83,14 +84,15 @@ int startServer(const Server &server) {
     } else {
         addr.sin_addr.s_addr = htonl(INADDR_ANY);
     }
-    std::cout << server.host << std::endl;
-    if (bind(g_server_sock, (sockaddr *)&addr, sizeof(addr)) < 0) {
+    if (bind(g_server_sock, (sockaddr *)&addr, sizeof(addr)) < 0) 
+    {
         perror("bind");
         close(g_server_sock);
         return EXIT_FAILURE;
     }
 
-    if (listen(g_server_sock, 128) < 0) {
+    if (listen(g_server_sock, 128) < 0) 
+    {
         perror("listen");
         close(g_server_sock);
         return EXIT_FAILURE;
@@ -113,25 +115,35 @@ int startServer(const Server &server) {
         FD_SET(g_server_sock, &readfds);
         for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it) {
             FD_SET(*it, &readfds);
-            if (*it > maxfd) maxfd = *it;
+            if (*it > maxfd) 
+                maxfd = *it;
         }
 
-        timeval tv; tv.tv_sec = 1; tv.tv_usec = 0;
+        timeval tv;
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
         int ready = select(maxfd + 1, &readfds, NULL, NULL, &tv);
-        if (ready < 0) {
-            if (errno == EINTR) continue;
+        if (ready < 0) 
+        {
+            if (errno == EINTR)
+                continue;
             perror("select");
             break;
         }
 
         // New connections
-        if (FD_ISSET(g_server_sock, &readfds)) {
-            sockaddr_in client_addr; socklen_t client_len = sizeof(client_addr);
+        // when a server socket is ready to read => a new client is ready to connect
+        if (FD_ISSET(g_server_sock, &readfds))
+        {
+            sockaddr_in client_addr;
+            socklen_t client_len = sizeof(client_addr);
             for (;;) {
                 int client_sock = accept(g_server_sock, (sockaddr *)&client_addr, &client_len);
                 if (client_sock < 0) {
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) break;
-                    if (errno == EINTR) continue;
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) 
+                        break;
+                    if (errno == EINTR)
+                        continue;
                     perror("accept");
                     break;
                 }
@@ -142,23 +154,24 @@ int startServer(const Server &server) {
                 addClient(client_sock);
             }
         }
-
         // Handle readable clients
         std::vector<int> toClose;
         for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it) {
             int fd = *it;
-            if (!FD_ISSET(fd, &readfds)) continue;
+            if (!FD_ISSET(fd, &readfds))
+                continue;
 
             char buffer[8192];
-            for (;;) {
+            for (;;) 
+            {
                 ssize_t n = recv(fd, buffer, sizeof(buffer), 0);
-                if (n > 0) {
+                if (n > 0) 
+                {
                     recvBuf[fd].append(buffer, n);
                     if (isRequestComplete(recvBuf[fd].c_str(), (int)recvBuf[fd].size())) {
                         // Parse request line
                         std::string request = recvBuf[fd];
                         reqCount[fd]++;
-
                         std::istringstream iss(request);
                         std::string method, path, version;
                         iss >> method >> path >> version;
