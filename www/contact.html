@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Webserv • Contact</title>
+    <link rel="stylesheet" href="/assets/css/styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="container nav">
+        <a class="brand" href="/"><span class="dot"></span><span>Webserv</span></a>
+        <nav style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <a href="/">Home</a>
+          <a href="/about.html">About</a>
+          <a href="/services.html">Services</a>
+          <a href="/gallery.html">Gallery</a>
+          <a class="active" href="/contact.html">Contact</a>
+        </nav>
+      </div>
+    </header>
+    <main class="main">
+      <div class="container">
+        <section class="card"><div class="body">
+          <h1>Contact Us</h1>
+          <p style="color:var(--muted)">This form is a front-end only demo.</p>
+          <form>
+            <input name="name" placeholder="Your name" required />
+            <input name="email" type="email" placeholder="Your email" required />
+            <textarea name="message" rows="5" placeholder="Message" required></textarea>
+            <button class="btn" type="submit">Send</button>
+          </form>
+        </div></section>
+      </div>
+    </main>
+    <footer class="footer"><div class="container">© <span id="year"></span> Webserv</div></footer>
+    <script>document.getElementById('year').textContent = (new Date).getFullYear();</script>
+  </body>
+</html>

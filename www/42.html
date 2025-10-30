@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Webserv • 42 Beirut</title>
+    <link rel="stylesheet" href="/assets/css/styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="container nav">
+        <a class="brand" href="/"><span class="dot"></span><span>Webserv</span></a>
+        <nav style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <a href="/">Home</a>
+          <a href="/about.html">About</a>
+          <a href="/services.html">Services</a>
+          <a href="/gallery.html">Gallery</a>
+          <a class="active" href="/42.html">42</a>
+          <a href="/contact.html">Contact</a>
+          <button id="themeToggle" class="btn ghost" style="margin-left:8px">Toggle</button>
+        </nav>
+      </div>
+    </header>
+    <main class="main">
+      <div class="container">
+        <section class="card"><div class="body">
+          <img class="responsive" src="/assets/img/42/beirut.svg" alt="42 Beirut"/>
+          <h1 style="margin:14px 0 6px">42 Beirut</h1>
+          <p style="color:var(--muted);margin:0">Peer-to-peer, project-based learning. No teachers. Master C, Unix, algorithms, and more through intensive projects.</p>
+        </div></section>
+      </div>
+      <div class="container">
+        <h2 style="margin:0 0 12px">Core 42 Projects</h2>
+        <section class="grid cols-3">
+          <div class="card"><div class="body"><img class="responsive" src="/assets/img/42/libft.svg" alt="Libft"/><h3>Libft</h3><p style="color:var(--muted)">Your own C standard library: memory, strings, lists.</p></div></div>
+          <div class="card"><div class="body"><img class="responsive" src="/assets/img/42/gnl.svg" alt="get_next_line"/><h3>get_next_line</h3><p style="color:var(--muted)">Efficient line-by-line file reading.</p></div></div>
+          <div class="card"><div class="body"><img class="responsive" src="/assets/img/42/printf.svg" alt="ft_printf"/><h3>ft_printf</h3><p style="color:var(--muted)">Re-implement printf with format parsing.</p></div></div>
+          <div class="card"><div class="body"><img class="responsive" src="/assets/img/42/pipex.svg" alt="pipex"/><h3>pipex</h3><p style="color:var(--muted)">Recreate shell piping using processes and IPC.</p></div></div>
+          <div class="card"><div class="body"><img class="responsive" src="/assets/img/42/push_swap.svg" alt="push_swap"/><h3>push_swap</h3><p style="color:var(--muted)">Sort stacks with minimal operations.</p></div></div>
+          <div class="card"><div class="body"><img class="responsive" src="/assets/img/42/minishell.svg" alt="minishell"/><h3>minishell</h3><p style="color:var(--muted)">Build a functional shell with parsing and execution.</p></div></div>
+          <div class="card"><div class="body"><img class="responsive" src="/assets/img/42/so_long.svg" alt="so_long"/><h3>so_long</h3><p style="color:var(--muted)">2D game using MiniLibX and basic graphics.</p></div></div>
+          <div class="card"><div class="body"><img class="responsive" src="/assets/img/42/cub3d.svg" alt="cub3d"/><h3>cub3d</h3><p style="color:var(--muted)">Raycasting to render a simple 3D maze.</p></div></div>
+          <div class="card"><div class="body"><img class="responsive" src="/assets/img/42/webserv.svg" alt="webserv"/><h3>webserv</h3><p style="color:var(--muted)">HTTP server in C/C++ handling static and CGI.</p></div></div>
+        </section>
+      </div>
+    </main>
+    <footer class="footer"><div class="container">© <span id="year"></span> Webserv</div></footer>
+    <script>(function(){const r=document.documentElement,s=localStorage.getItem('theme');if(s){r.setAttribute('data-theme',s)}const b=document.getElementById('themeToggle');function L(){b.textContent=r.getAttribute('data-theme')==='light'?'Dark':'Light'}L();b.addEventListener('click',function(){const n=r.getAttribute('data-theme')==='light'?'':'light';if(n){r.setAttribute('data-theme',n)}else{r.removeAttribute('data-theme')}localStorage.setItem('theme',n);L()});document.getElementById('year').textContent=(new Date).getFullYear()})();</script>
+  </body>
+</html>

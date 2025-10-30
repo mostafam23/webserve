@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Webserv • About</title>
+    <link rel="stylesheet" href="/assets/css/styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="container nav">
+        <a class="brand" href="/"><span class="dot"></span><span>Webserv</span></a>
+        <nav style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <a href="/">Home</a>
+          <a class="active" href="/about.html">About</a>
+          <a href="/services.html">Services</a>
+          <a href="/gallery.html">Gallery</a>
+          <a href="/contact.html">Contact</a>
+        </nav>
+      </div>
+    </header>
+    <main class="main">
+      <div class="container">
+        <section class="card"><div class="body">
+          <span class="badge">About</span>
+          <h1>About This Project</h1>
+          <p style="color:var(--muted)">This website is served by a custom C++ web server. It demonstrates routing, static file serving, and simple forms.</p>
+        </div></section>
+      </div>
+    </main>
+    <footer class="footer"><div class="container">© <span id="year"></span> Webserv</div></footer>
+    <script>document.getElementById('year').textContent = (new Date).getFullYear();</script>
+  </body>
+</html>

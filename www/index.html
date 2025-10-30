@@ -1,15 +1,76 @@
 <!DOCTYPE html>
-<html>
-<head>
-    <title>Webserv Test</title>
-</head>
-<body>
-    <h1>Welcome to My Webserv!</h1>
-    <p>This is the index page.</p>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Webserv • Home</title>
+    <link rel="stylesheet" href="/assets/css/styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <div class="container nav">
+        <a class="brand" href="/">
+          <span class="dot"></span>
+          <span>Webserv</span>
+        </a>
+        <nav style="margin-left:auto;display:flex;gap:8px;align-items:center">
+          <a class="active" href="/">Home</a>
+          <a href="/about.html">About</a>
+          <a href="/services.html">Services</a>
+          <a href="/gallery.html">Gallery</a>
+          <a href="/contact.html">Contact</a>
+        </nav>
+      </div>
+    </header>
 
-    <form action="/upload" method="POST" enctype="multipart/form-data">
-        <input type="file" name="file">
-        <input type="submit" value="Upload">
-    </form>
-</body>
-</html>
+    <main class="main">
+      <div class="container hero">
+        <section class="card" style="order:1">
+          <div class="body">
+            <span class="badge">Welcome</span>
+            <h1 style="margin:10px 0 6px">Welcome to My Webserv</h1>
+            <p style="color:var(--muted);margin:0 0 18px">
+              A clean, responsive demo site served by your C++ web server.
+            </p>
+            <div class="alert">
+              TIP: Try visiting <span class="kbd">/errors/404.html</span> or upload a file below.
+            </div>
+          </div>
+        </section>
+
+        <section class="card" style="order:2">
+          <div class="body">
+            <h2 style="margin:0 0 10px">Upload a file</h2>
+            <p class="code">POST /upload</p>
+            <form action="/upload" method="POST" enctype="multipart/form-data">
+              <input type="file" name="file" />
+              <div style="display:flex;gap:10px;align-items:center">
+                <button class="btn" type="submit">Upload</button>
+                <span class="muted" style="color:var(--muted)">Max 5MB (example)</span>
+              </div>
+            </form>
+          </div>
+        </section>
+      </div>
+
+      <div class="container">
+        <section class="grid cols-3">
+          <div class="card"><div class="body"><h3>Fast</h3><p style="color:var(--muted)">Lightweight static pages for quick load times.</p></div></div>
+          <div class="card"><div class="body"><h3>Modern</h3><p style="color:var(--muted)">Responsive layout, clean design, and accessible components.</p></div></div>
+          <div class="card"><div class="body"><h3>Extensible</h3><p style="color:var(--muted)">Add routes, CGI endpoints, and APIs as you grow.</p></div></div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="container" style="display:flex;justify-content:space-between;align-items:center">
+        <span style="color:var(--muted)">© <span id="year"></span> Webserv</span>
+        <div style="display:flex;gap:10px">
+          <a class="nav" href="/errors/404.html" style="padding:0;color:var(--muted)">404</a>
+          <a class="nav" href="/cgi-bin/" style="padding:0;color:var(--muted)">CGI</a>
+        </div>
+      </div>
+      <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+    </footer>
+  </body>
+  </html>
