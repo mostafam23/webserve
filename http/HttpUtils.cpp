@@ -1,5 +1,6 @@
 #include "HttpUtils.hpp"
 #include <sstream>
+#include <iostream>
 #include <string>
 
 std::string intToString(int n) {
@@ -8,12 +9,14 @@ std::string intToString(int n) {
     return oss.str();
 }
 
-bool isRequestComplete(const char *buffer, size_t length) {
+bool isRequestComplete(const char *buffer, size_t length) 
+{
     if (length < 4)
         return false;
 
     // Find end of headers: CRLFCRLF or LFLF
     long headers_end = -1;
+    GET \ HTTP/1.1/R/N 16
     for (size_t i = 0; i + 3 < length; ++i) {
         if (buffer[i] == '\r' && buffer[i + 1] == '\n' &&
             buffer[i + 2] == '\r' && buffer[i + 3] == '\n') {
