@@ -21,6 +21,7 @@
 #include <vector>
 #include <sstream>
 #include <fstream>
+#include <algorithm>
 
 // Minimal IPv4 parser: accepts dotted-quad "A.B.C.D" and fills in_addr
 static bool parseIPv4(const std::string& s, in_addr* out)
@@ -60,6 +61,93 @@ static void setNonBlocking(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0) return;
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+// ===== Routing helpers =====
+static std::string sanitizePath(const std::string& raw)
+{
+    // ensure starts with '/'
+    std::string p = raw.empty() || raw[0] != '/' ? std::string("/") + raw : raw;
+    // split and resolve .. and .
+    std::vector<std::string> parts; parts.reserve(16);
+    std::string seg;
+    for (size_t i = 0; i <= p.size(); ++i) {
+        if (i == p.size() || p[i] == '/') {
+            if (!seg.empty()) {
+                if (seg == ".") {
+                    // skip
+                } else if (seg == "..") {
+                    if (!parts.empty()) parts.pop_back();
+                } else {
+                    parts.push_back(seg);
+                }
+                seg.clear();
+            }
+        } else seg += p[i];
+    }
+    std::string out = "/";
+    for (size_t i = 0; i < parts.size(); ++i) {
+        out += parts[i];
+        if (i + 1 < parts.size()) out += "/";
+    }
+    return out;
+}
+
+static std::string joinPaths(const std::string& a, const std::string& b)
+{
+    if (a.empty()) return b;
+    if (b.empty()) return a;
+    if (a[a.size()-1] == '/') {
+        if (b[0] == '/') return a + b.substr(1);
+        return a + b;
+    }
+    if (b[0] == '/') return a + b;
+    return a + "/" + b;
+}
+
+static const Location* matchLocation(const Server& server, const std::string& path)
+{
+    const Location* best = 0;
+    size_t bestLen = 0;
+    for (int i = 0; i < server.location_count; ++i) {
+        const Location& loc = server.locations[i];
+        const std::string& lp = loc.path;
+        if (lp.empty()) continue;
+        if (path.find(lp) == 0) {
+            if (lp.size() > bestLen) { best = &loc; bestLen = lp.size(); }
+        }
+    }
+    return best;
+}
+
+static bool isMethodAllowed(const Location* loc, const std::string& method)
+{
+    if (!loc) return true; // no restriction
+    if (loc->methods.empty()) return true;
+    return loc->methods.find(method) != loc->methods.end();
+}
+
+static std::string buildErrorWithCustom(const Server& server, int code, const std::string& message)
+{
+    std::map<int, std::string>::const_iterator it = server.error_pages.find(code);
+    if (it == server.error_pages.end())
+        return buildErrorResponse(code, message);
+    // Resolve path relative to server.root
+    std::string ep = it->second;
+    if (!ep.empty() && ep[0] != '/') ep = std::string("/") + ep;
+    std::string full = joinPaths(server.root, ep);
+    std::ifstream f(full.c_str(), std::ios::binary);
+    if (!f) return buildErrorResponse(code, message);
+    std::string body((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    std::ostringstream resp;
+    resp << "HTTP/1.1 " << code << " "
+         << (code==404?"Not Found":(code==405?"Method Not Allowed":(code==500?"Internal Server Error":"Error")))
+         << "\r\n";
+    resp << "Content-Type: text/html\r\n";
+    resp << "Content-Length: " << body.size() << "\r\n";
+    resp << "Connection: close\r\n\r\n";
+    resp << body;
+    return resp.str();
 }
 
 int startServer(const Server &server) {
@@ -199,8 +287,20 @@ int startServer(const Server &server) {
                              << (client_wants_keepalive ? " (keep-alive)" : " (close)");
                         Logger::request(rlog.str());
 
-                        // Build response (GET/HEAD minimal)
-                        std::string full_path = server.root + path;
+                        // Routing: match location, enforce methods, resolve root and path
+                        const Location* loc = matchLocation(server, path);
+                        std::string effectiveRoot = (loc && !loc->root.empty()) ? loc->root : server.root;
+                        std::string safePath = sanitizePath(path);
+                        if (!isMethodAllowed(loc, method)) {
+                            std::string error = buildErrorWithCustom(server, 405, "Method Not Allowed");
+                            send(fd, error.c_str(), error.size(), 0);
+                            client_wants_keepalive = false;
+                            toClose.push_back(fd);
+                            break;
+                        }
+
+                        // Build response (GET/HEAD minimal) with per-location root
+                        std::string full_path = joinPaths(effectiveRoot, safePath);
                         if (isDirectory(full_path)) {
                             if (!full_path.empty() && full_path[full_path.size() - 1] != '/')
                                 full_path += "/";
@@ -234,7 +334,7 @@ int startServer(const Server &server) {
                                 response += "\r\n";
                                 response += body;
                             } else {
-                                response = buildErrorResponse(404, "Not Found");
+                                response = buildErrorWithCustom(server, 404, "Not Found");
                                 client_wants_keepalive = false;
                             }
                         } else if (method == "HEAD") {
@@ -247,7 +347,7 @@ int startServer(const Server &server) {
                                 response += client_wants_keepalive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
                                 response += "\r\n";
                             } else {
-                                response = buildErrorResponse(404, "Not Found");
+                                response = buildErrorWithCustom(server, 404, "Not Found");
                                 client_wants_keepalive = false;
                             }
                         } else if (method == "OPTIONS") {
