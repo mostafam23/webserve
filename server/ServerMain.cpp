@@ -57,6 +57,11 @@ static bool parseIPv4(const std::string& s, in_addr* out)
     return true;
 }
 
+/*fcntl is a system call used to manipulate file descriptors.yaany yet7akam sso fcntl can control the socket and change its flags
+int flags = fcntl(fd, F_GETFL, 0); this means to get all the flags of this fd
+fcntl(fd, F_SETFL, flags | O_NONBLOCK); haydi yaany yzeed aal flag also the )_NONBLOCK
+flags msln ) 0_RDONLY, ...
+*/
 static void setNonBlocking(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags < 0) return;
@@ -69,6 +74,10 @@ static std::string sanitizePath(const std::string& raw)
     // ensure starts with '/'
     std::string p = raw.empty() || raw[0] != '/' ? std::string("/") + raw : raw;
     // split and resolve .. and .
+    /*
+    The vector allocates space once (for 16 items)
+    No reallocation happens until you exceed 16 items
+    */
     std::vector<std::string> parts; parts.reserve(16);
     std::string seg;
     for (size_t i = 0; i <= p.size(); ++i) {
@@ -76,9 +85,13 @@ static std::string sanitizePath(const std::string& raw)
             if (!seg.empty()) {
                 if (seg == ".") {
                     // skip
-                } else if (seg == "..") {
+                }
+                //Important note: the function does not allow escaping above root because it only pops if parts is non-empty. 
+                //This is safe behavior for preventing directory traversal above the root path you intended.
+                else if (seg == "..") {
                     if (!parts.empty()) parts.pop_back();
-                } else {
+                } 
+                else {
                     parts.push_back(seg);
                 }
                 seg.clear();
@@ -95,16 +108,21 @@ static std::string sanitizePath(const std::string& raw)
 
 static std::string joinPaths(const std::string& a, const std::string& b)
 {
-    if (a.empty()) return b;
-    if (b.empty()) return a;
+    if (a.empty()) 
+        return b;
+    if (b.empty()) 
+        return a;
     if (a[a.size()-1] == '/') {
-        if (b[0] == '/') return a + b.substr(1);
+        if (b[0] == '/') 
+            return a + b.substr(1);
         return a + b;
     }
-    if (b[0] == '/') return a + b;
+    if (b[0] == '/') 
+        return a + b;
     return a + "/" + b;
 }
 
+//this return the longest matching path
 static const Location* matchLocation(const Server& server, const std::string& path)
 {
     const Location* best = 0;
@@ -114,7 +132,9 @@ static const Location* matchLocation(const Server& server, const std::string& pa
         const std::string& lp = loc.path;
         if (lp.empty()) continue;
         if (path.find(lp) == 0) {
-            if (lp.size() > bestLen) { best = &loc; bestLen = lp.size(); }
+            if (lp.size() > bestLen) { 
+                best = &loc; 
+                bestLen = lp.size(); }
         }
     }
     return best;
@@ -123,7 +143,9 @@ static const Location* matchLocation(const Server& server, const std::string& pa
 static bool isMethodAllowed(const Location* loc, const std::string& method)
 {
     if (!loc) return true; // no restriction
-    if (loc->methods.empty()) return true;
+    if (loc->methods.empty()) return true;//Example:location /images { root /var/www/img; }, No “allow” or “methods” defined → GET, POST, etc. are all allowed.
+    //What does .find() return? If the method exists → it returns an iterator pointing to that element.
+    //If the method does NOT exist → it returns end() iterator.
     return loc->methods.find(method) != loc->methods.end();
 }
 
@@ -133,13 +155,23 @@ static std::string buildErrorWithCustom(const Server& server, int code, const st
     if (it == server.error_pages.end())
         return buildErrorResponse(code, message);
     // Resolve path relative to server.root
-    std::string ep = it->second;
-    if (!ep.empty() && ep[0] != '/') ep = std::string("/") + ep;
+    std::string ep = it->second;// it->second = the value (path, ex: "/errors/404.html")
+    if (!ep.empty() && ep[0] != '/') 
+        ep = std::string("/") + ep;// Converts "errors/404.html" → "/errors/404.html"
     std::string full = joinPaths(server.root, ep);
+    //std::ifstream = input file stream It is used to read from a file. So this line creates a file stream named f to read a file.
+    /*
+    Opening with std::ios::binary tells C++:
+    “Read the file exactly as it is, do not modify any bytes.”
+    So no newline conversion happens(kermel so times eza fatana as text so l os byaaml convert lal \r\n to \n aw l aaks so hayda bi2aser bl css whtml w ...).
+    */
     std::ifstream f(full.c_str(), std::ios::binary);
-    if (!f) return buildErrorResponse(code, message);
+    if (!f) 
+        return buildErrorResponse(code, message);
+    //The line below reads the entire file content (opened as f) from start to end and stores it into a std::string called bod
     std::string body((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-    std::ostringstream resp;
+    std::ostringstream resp;//It is like std::cout but instead of printing to the terminal, it builds a string in memory.
+    //You use << to add text into it. At the end, you call .str() to get the complete string.
     resp << "HTTP/1.1 " << code << " "
          << (code==404?"Not Found":(code==405?"Method Not Allowed":(code==500?"Internal Server Error":"Error")))
          << "\r\n";
@@ -151,15 +183,22 @@ static std::string buildErrorWithCustom(const Server& server, int code, const st
 }
 
 int startServer(const Server &server) {
+    /*This tells the socket which address family (network type) you want to use.
+    AF_INET = IPv4 addresses
+    SOCK_STREAM : This tells the socket which communication type it will use. SOCK_STREAM = TCP
+    TCP means: connection-based, reliable (guarantees delivery and order),used for HTTP, HTTPS, FTP, SSH, etc.
+    The system knows protocol must be TCP, so we pass 0.
+    */
     g_server_sock = socket(AF_INET, SOCK_STREAM, 0); 
     if (g_server_sock < 0) {
         perror("socket");
         return EXIT_FAILURE;
     }
-
     int opt = 1;
+    //setsocket modifies the setting of the server socket before binding it to a port
+    //SO_REUSEADDR means : You can restart your server immediately without waiting for the port to free up.Why? Because the OS keeps the port in a "TIME_WAIT" state for 30–120 seconds.
+    //SOL_SOCKET : “Apply this option at the socket leve
     setsockopt(g_server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
     sockaddr_in addr;
     std::memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -169,7 +208,8 @@ int startServer(const Server &server) {
             // Fallback to any address if parsing fails
             addr.sin_addr.s_addr = htonl(INADDR_ANY);
         }
-    } else {
+    } 
+    else {
         addr.sin_addr.s_addr = htonl(INADDR_ANY);
     }
     if (bind(g_server_sock, (sockaddr *)&addr, sizeof(addr)) < 0) 
@@ -178,16 +218,13 @@ int startServer(const Server &server) {
         close(g_server_sock);
         return EXIT_FAILURE;
     }
-
     if (listen(g_server_sock, 128) < 0) 
     {
         perror("listen");
         close(g_server_sock);
         return EXIT_FAILURE;
     }
-
     setNonBlocking(g_server_sock);
-
     std::cout << "✅ Server listening on http://" << server.host << ":" << server.listen
               << "\nPress Ctrl+C to stop the server\n==============================\n";
 
@@ -197,20 +234,22 @@ int startServer(const Server &server) {
     std::set<int> clients;
 
     while (!g_shutdown) {
-        fd_set readfds;
-        FD_ZERO(&readfds);
+        //fd_set readfds;//fd_set is a data structure used by the select() system call to keep track of a group of file descriptors (FDs) that we want to monitor.
+        //Think of it like a list/collection of sockets that you tell Linux to “watch”.
+        //So fd_set = “a set of sockets to check”.
+        FD_ZERO(&readfds);// FD_ZERO initializes/clears the fd_set.Because each time before calling select(), you must prepare a fresh set of sockets to watch.
+        //If you don’t clear it, it may contain old data → undefined behavior.
         int maxfd = g_server_sock;
-        FD_SET(g_server_sock, &readfds);
+        FD_SET(g_server_sock, &readfds);//FD_SET = write a socket number on the board
         for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it) {
             FD_SET(*it, &readfds);
             if (*it > maxfd) 
                 maxfd = *it;
         }
-
         timeval tv;
         tv.tv_sec = 1;
         tv.tv_usec = 0;
-        int ready = select(maxfd + 1, &readfds, NULL, NULL, &tv);
+        int ready = select(maxfd + 1, &readfds, NULL, NULL, &tv);//maxfd+1 because we need to tell how many file descriptors it should check and plus because form 0 to nfds - 1
         if (ready < 0) 
         {
             if (errno == EINTR)
@@ -218,24 +257,31 @@ int startServer(const Server &server) {
             perror("select");
             break;
         }
-
         // New connections
-        // when a server socket is ready to read => a new client is ready to connect
+        // when a server socket is ready to read yaany a new client is ready to connect
+        //if (FD_ISSET(3, &readfds)) { ... }  // is server socket ready? 3 yaany server-socket
+        /*
+        ✅ A new client is connecting
+        ❗ Not when a client sends data
+        ❗ Not when server wants to write
+        ✅ Only when a new TCP connection request arrives
+        */
         if (FD_ISSET(g_server_sock, &readfds))
         {
-            sockaddr_in client_addr;
+            sockaddr_in client_addr;//Creates a structure to store the connecting client’s IP and port
             socklen_t client_len = sizeof(client_addr);
             for (;;) {
+                //why inifinte loop? Because the server accepts clients as many as possible until no more pending connections remain.
                 int client_sock = accept(g_server_sock, (sockaddr *)&client_addr, &client_len);
                 if (client_sock < 0) {
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) 
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) //No more clients waiting to connect now.
                         break;
-                    if (errno == EINTR)
+                    if (errno == EINTR) //Interrupt signal occurred (example: Ctrl+C or OS signal).Try again → continue;
                         continue;
                     perror("accept");
                     break;
                 }
-                setNonBlocking(client_sock);
+                setNonBlocking(client_sock);//future recv() or send() do not block the server remains responsive(saree3 l estijaba)
                 clients.insert(client_sock);
                 recvBuf[client_sock] = std::string();
                 reqCount[client_sock] = 0;
@@ -269,7 +315,6 @@ int startServer(const Server &server) {
                             toClose.push_back(fd);
                             break;
                         }
-
                         std::map<std::string, std::string> headers = parseHeaders(request);
                         bool client_wants_keepalive = true;
                         if (headers.find("connection") != headers.end()) {
@@ -279,14 +324,12 @@ int startServer(const Server &server) {
                         }
                         if (version == "HTTP/1.0" && headers["connection"] != "Keep-Alive")
                             client_wants_keepalive = false;
-
                         // Log request
                         std::ostringstream rlog;
                         rlog << "[REQUEST #" << reqCount[fd] << "] Client " << fd << ": "
                              << method << " " << path << " " << version
                              << (client_wants_keepalive ? " (keep-alive)" : " (close)");
                         Logger::request(rlog.str());
-
                         // Routing: match location, enforce methods, resolve root and path
                         const Location* loc = matchLocation(server, path);
                         std::string effectiveRoot = (loc && !loc->root.empty()) ? loc->root : server.root;
@@ -298,7 +341,6 @@ int startServer(const Server &server) {
                             toClose.push_back(fd);
                             break;
                         }
-
                         // Build response (GET/HEAD minimal) with per-location root
                         std::string full_path = joinPaths(effectiveRoot, safePath);
                         if (isDirectory(full_path)) {
