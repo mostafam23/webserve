@@ -422,6 +422,7 @@ int startServer(const Server &server) {
                 }
             }
         }
+        
 
         for (size_t i = 0; i < toClose.size(); ++i) {
             int fd = toClose[i];
