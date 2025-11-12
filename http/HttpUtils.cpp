@@ -14,18 +14,22 @@ bool isRequestComplete(const char *buffer, size_t length)
     if (length < 4)
         return false;
 
-    // Find end of headers: CRLFCRLF or LFLF
+    //for windows
     long headers_end = -1;
     for (size_t i = 0; i + 3 < length; ++i) {
         if (buffer[i] == '\r' && buffer[i + 1] == '\n' &&
-            buffer[i + 2] == '\r' && buffer[i + 3] == '\n') {
+            buffer[i + 2] == '\r' && buffer[i + 3] == '\n') 
+        {
             headers_end = (long)(i + 4);
             break;
         }
     }
+    //for linux
     if (headers_end == -1) {
         for (size_t i = 0; i + 1 < length; ++i) {
-            if (buffer[i] == '\n' && buffer[i + 1] == '\n') {
+            if (buffer[i] == '\n' && buffer[i + 1] == '\n') 
+            {
+                
                 headers_end = (long)(i + 2);
                 break;
             }

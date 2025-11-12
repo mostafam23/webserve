@@ -29,23 +29,31 @@ static bool parseIPv4(const std::string& s, in_addr* out)
     unsigned long a = 0, b = 0, c = 0, d = 0;
     const char* p = s.c_str();
     char* end = 0;
-    if (!p || !*p) return false;
+    if (!p || !*p)
+        return false;
 
     a = std::strtoul(p, &end, 10);
-    if (end == p || *end != '.') return false;
+    if (end == p || *end != '.')
+        return false;
     p = end + 1;
     b = std::strtoul(p, &end, 10);
-    if (end == p || *end != '.') return false;
+    if (end == p || *end != '.')
+        return false;
     p = end + 1;
     c = std::strtoul(p, &end, 10);
-    if (end == p || *end != '.') return false;
+    if (end == p || *end != '.')
+        return false;
     p = end + 1;
     d = std::strtoul(p, &end, 10);
-    if (end == p || *end != '\0') return false;
-    if (a > 255 || b > 255 || c > 255 || d > 255) return false;
+    if (end == p || *end != '\0')
+        return false;
+    if (a > 255 || b > 255 || c > 255 || d > 255)
+        return false;
     unsigned long ip = (a << 24) | (b << 16) | (c << 8) | d;//a*256^3 + b*256^2 + c*256 + d same as this because shifting 24 means 2^24 =>(2^8)^3=>(256)^3
     //htonl Stands for Host TO Network Long.
-    out->s_addr = htonl((uint32_t)ip);//(uint32_t)ip Cast ip to an unsigned 32-bit integer.
+    // Convert 2130706433 (127.0.0.1) from host byte order to network byte order 
+    // using htonl() to ensure correct endianness for network operations.
+    out->s_addr = htonl((uint32_t)ip); //convert 2130706433 to hexa and then read it from the right,then convert it to decimal
     /* Host vs Network Byte Order
     Host byte order – how your CPU stores multi-byte integers in memory.
     Most PCs use little-endian → least significant byte first.
@@ -57,14 +65,18 @@ static bool parseIPv4(const std::string& s, in_addr* out)
     return true;
 }
 
-/*fcntl is a system call used to manipulate file descriptors.yaany yet7akam sso fcntl can control the socket and change its flags
+
+/*fcntl is a system call used to manipulate file descriptors.yaany yet7akam so fcntl can control the socket and change its flags
 int flags = fcntl(fd, F_GETFL, 0); this means to get all the flags of this fd
 fcntl(fd, F_SETFL, flags | O_NONBLOCK); haydi yaany yzeed aal flag also the )_NONBLOCK
 flags msln ) 0_RDONLY, ...
 */
-static void setNonBlocking(int fd) {
+static void setNonBlocking(int fd) 
+{
     int flags = fcntl(fd, F_GETFL, 0);
-    if (flags < 0) return;
+
+    if (flags < 0)
+        return;
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
@@ -197,7 +209,7 @@ int startServer(const Server &server) {
     int opt = 1;
     //setsocket modifies the setting of the server socket before binding it to a port
     //SO_REUSEADDR means : You can restart your server immediately without waiting for the port to free up.Why? Because the OS keeps the port in a "TIME_WAIT" state for 30–120 seconds.
-    //SOL_SOCKET : “Apply this option at the socket leve
+    //SOL_SOCKET : “Apply this option at the socket level”
     setsockopt(g_server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     sockaddr_in addr;
     std::memset(&addr, 0, sizeof(addr));
@@ -233,15 +245,17 @@ int startServer(const Server &server) {
     std::map<int, int> reqCount;
     std::set<int> clients;
 
-    while (!g_shutdown) {
-        //fd_set readfds;//fd_set is a data structure used by the select() system call to keep track of a group of file descriptors (FDs) that we want to monitor.
+    while (!g_shutdown) 
+    {
+        fd_set readfds;//fd_set is a data structure used by the select() system call to keep track of a group of file descriptors (FDs) that we want to monitor.
         //Think of it like a list/collection of sockets that you tell Linux to “watch”.
         //So fd_set = “a set of sockets to check”.
         FD_ZERO(&readfds);// FD_ZERO initializes/clears the fd_set.Because each time before calling select(), you must prepare a fresh set of sockets to watch.
         //If you don’t clear it, it may contain old data → undefined behavior.
         int maxfd = g_server_sock;
         FD_SET(g_server_sock, &readfds);//FD_SET = write a socket number on the board
-        for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it) {
+        for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it) 
+        {
             FD_SET(*it, &readfds);
             if (*it > maxfd) 
                 maxfd = *it;
@@ -252,14 +266,17 @@ int startServer(const Server &server) {
         int ready = select(maxfd + 1, &readfds, NULL, NULL, &tv);//maxfd+1 because we need to tell how many file descriptors it should check and plus because form 0 to nfds - 1
         if (ready < 0) 
         {
+            //during selection if we press cntrl-C
             if (errno == EINTR)
+            {
                 continue;
+            }
             perror("select");
             break;
         }
         // New connections
         // when a server socket is ready to read yaany a new client is ready to connect
-        //if (FD_ISSET(3, &readfds)) { ... }  // is server socket ready? 3 yaany server-socket
+        // if (FD_ISSET(3, &readfds)) { ... }  // is server socket ready? 3 yaany server-socket
         /*
         ✅ A new client is connecting
         ❗ Not when a client sends data
@@ -270,14 +287,20 @@ int startServer(const Server &server) {
         {
             sockaddr_in client_addr;//Creates a structure to store the connecting client’s IP and port
             socklen_t client_len = sizeof(client_addr);
-            for (;;) {
+            for (;;) 
+            {
                 //why inifinte loop? Because the server accepts clients as many as possible until no more pending connections remain.
                 int client_sock = accept(g_server_sock, (sockaddr *)&client_addr, &client_len);
-                if (client_sock < 0) {
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) //No more clients waiting to connect now.
+                if (client_sock < 0) 
+                {
+                    if (errno == EAGAIN) //No more clients waiting to connect now.
+                    {
                         break;
+                    }
                     if (errno == EINTR) //Interrupt signal occurred (example: Ctrl+C or OS signal).Try again → continue;
+                    {
                         continue;
+                    }
                     perror("accept");
                     break;
                 }
@@ -290,19 +313,23 @@ int startServer(const Server &server) {
         }
         // Handle readable clients
         std::vector<int> toClose;
-        for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it) {
+        for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it) 
+        {
             int fd = *it;
+            //when there is a connection for a client but no request yet
             if (!FD_ISSET(fd, &readfds))
+            {
                 continue;
-
+            }
             char buffer[8192];
             for (;;) 
             {
-                ssize_t n = recv(fd, buffer, sizeof(buffer), 0);
+                ssize_t n = recv(fd, buffer, sizeof(buffer), 0); // 0 in the last argument to make the recv works normally wohtout options
                 if (n > 0) 
                 {
                     recvBuf[fd].append(buffer, n);
-                    if (isRequestComplete(recvBuf[fd].c_str(), (int)recvBuf[fd].size())) {
+                    if (isRequestComplete(recvBuf[fd].c_str(), (int)recvBuf[fd].size())) 
+                    {
                         // Parse request line
                         std::string request = recvBuf[fd];
                         reqCount[fd]++;
@@ -400,7 +427,6 @@ int startServer(const Server &server) {
                             response = buildErrorResponse(501, "Not Implemented");
                             client_wants_keepalive = false;
                         }
-
                         // Send response (best-effort single send for now)
                         (void)send(fd, response.c_str(), response.size(), 0);
 
@@ -422,7 +448,6 @@ int startServer(const Server &server) {
                 }
             }
         }
-        
 
         for (size_t i = 0; i < toClose.size(); ++i) {
             int fd = toClose[i];
