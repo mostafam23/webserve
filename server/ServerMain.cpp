@@ -90,7 +90,8 @@ static std::string sanitizePath(const std::string& raw)
     The vector allocates space once (for 16 items)
     No reallocation happens until you exceed 16 items
     */
-    std::vector<std::string> parts; parts.reserve(16);
+    std::vector<std::string> parts; 
+    parts.reserve(16);
     std::string seg;
     for (size_t i = 0; i <= p.size(); ++i) {
         if (i == p.size() || p[i] == '/') {
@@ -142,7 +143,8 @@ static const Location* matchLocation(const Server& server, const std::string& pa
     for (int i = 0; i < server.location_count; ++i) {
         const Location& loc = server.locations[i];
         const std::string& lp = loc.path;
-        if (lp.empty()) continue;
+        if (lp.empty()) 
+        continue;
         if (path.find(lp) == 0) {
             if (lp.size() > bestLen) { 
                 best = &loc; 
@@ -330,6 +332,7 @@ int startServer(const Server &server) {
                     recvBuf[fd].append(buffer, n);
                     if (isRequestComplete(recvBuf[fd].c_str(), (int)recvBuf[fd].size())) 
                     {
+                        std::cout << "CARLA" << std::endl;
                         // Parse request line
                         std::string request = recvBuf[fd];
                         reqCount[fd]++;
@@ -342,12 +345,15 @@ int startServer(const Server &server) {
                             toClose.push_back(fd);
                             break;
                         }
+                        std::cout << request << std::endl;
                         std::map<std::string, std::string> headers = parseHeaders(request);
                         bool client_wants_keepalive = true;
                         if (headers.find("connection") != headers.end()) {
                             std::string conn = headers["connection"];
-                            for (size_t i = 0; i < conn.size(); ++i) conn[i] = tolower(conn[i]);
-                            if (conn == "close") client_wants_keepalive = false;
+                            for (size_t i = 0; i < conn.size(); ++i) 
+                                conn[i] = tolower(conn[i]);
+                            if (conn == "close") 
+                                client_wants_keepalive = false;
                         }
                         if (version == "HTTP/1.0" && headers["connection"] != "Keep-Alive")
                             client_wants_keepalive = false;
@@ -437,12 +443,19 @@ int startServer(const Server &server) {
                         }
                         break; // process next ready fd
                     }
-                } else if (n == 0) {
+                }
+                //n will be 0 if the client closed the terminal => close the connection 
+                else if (n == 0) 
+                {
                     // client closed
                     toClose.push_back(fd);
                     break;
-                } else {
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+                }
+                //n will be -1 if the client is not writing anything in the terminal after entering the for (;;) 
+                else 
+                {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) 
+                        break;
                     toClose.push_back(fd);
                     break;
                 }
