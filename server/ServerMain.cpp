@@ -140,18 +140,20 @@ static const Location* matchLocation(const Server& server, const std::string& pa
 {
     const Location* best = 0;
     size_t bestLen = 0;
-    for (int i = 0; i < server.location_count; ++i) {
+    for (int i = 0; i < server.location_count; ++i) 
+    {
         const Location& loc = server.locations[i];
         const std::string& lp = loc.path;
         if (lp.empty()) 
-        continue;
+            continue;
         if (path.find(lp) == 0) {
-            if (lp.size() > bestLen) { 
+            if (lp.size() > bestLen) 
+            {
                 best = &loc; 
-                bestLen = lp.size(); }
+                bestLen = lp.size(); 
+            }
         }
     }
-    std::cout << best->path << std::endl;
     return best;
 }
 
@@ -333,7 +335,6 @@ int startServer(const Server &server) {
                     recvBuf[fd].append(buffer, n);
                     if (isRequestComplete(recvBuf[fd].c_str(), (int)recvBuf[fd].size())) 
                     {
-                        std::cout << "CARLA" << std::endl;
                         // Parse request line
                         std::string request = recvBuf[fd];
                         reqCount[fd]++;
@@ -346,7 +347,6 @@ int startServer(const Server &server) {
                             toClose.push_back(fd);
                             break;
                         }
-                        std::cout << request << std::endl;
                         std::map<std::string, std::string> headers = parseHeaders(request);
                         /*
                         HTTP Connection Header Summary
@@ -381,9 +381,15 @@ int startServer(const Server &server) {
                         Logger::request(rlog.str());
                         // Routing: match location, enforce methods, resolve root and path
                         const Location* loc = matchLocation(server, path);
-                        std::string effectiveRoot = (loc && !loc->root.empty()) ? loc->root : server.root;
+                        std::string effectiveRoot;
+                        if (loc && !loc->root.empty()) {
+                            effectiveRoot = loc->root;
+                        } else {
+                            effectiveRoot = server.root;
+                        }
                         std::string safePath = sanitizePath(path);
-                        if (!isMethodAllowed(loc, method)) {
+                        if (!isMethodAllowed(loc, method)) 
+                        {
                             std::string error = buildErrorWithCustom(server, 405, "Method Not Allowed");
                             send(fd, error.c_str(), error.size(), 0);
                             client_wants_keepalive = false;

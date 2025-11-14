@@ -108,9 +108,7 @@ std::map<std::string, std::string> parseHeaders(const std::string &request) {
     std::istringstream stream(request);
     std::string line;
     std::getline(stream, line); //This reads up to the first newline character (\n) in the stream  but does not include the '\n' in the resulting string.
-    std::cout << line << std::endl;
     while (std::getline(stream, line)) {
-        std::cout << line << std::endl;
         if (!line.empty() && line[line.size() - 1] == '\r')
             line.erase(line.size() - 1);
         if (line.empty())
