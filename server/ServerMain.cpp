@@ -333,6 +333,7 @@ int startServer(const Server &server) {
                     recvBuf[fd].append(buffer, n);
                     if (isRequestComplete(recvBuf[fd].c_str(), (int)recvBuf[fd].size())) 
                     {
+                        std::cout << "CARLA" << std::endl;
                         // Parse request line
                         std::string request = recvBuf[fd];
                         reqCount[fd]++;
@@ -345,6 +346,7 @@ int startServer(const Server &server) {
                             toClose.push_back(fd);
                             break;
                         }
+                        std::cout << request << std::endl;
                         std::map<std::string, std::string> headers = parseHeaders(request);
                         /*
                         HTTP Connection Header Summary
