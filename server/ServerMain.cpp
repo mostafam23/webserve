@@ -90,7 +90,8 @@ static std::string sanitizePath(const std::string& raw)
     The vector allocates space once (for 16 items)
     No reallocation happens until you exceed 16 items
     */
-    std::vector<std::string> parts; parts.reserve(16);
+    std::vector<std::string> parts; 
+    parts.reserve(16);
     std::string seg;
     for (size_t i = 0; i <= p.size(); ++i) {
         if (i == p.size() || p[i] == '/') {
@@ -142,13 +143,15 @@ static const Location* matchLocation(const Server& server, const std::string& pa
     for (int i = 0; i < server.location_count; ++i) {
         const Location& loc = server.locations[i];
         const std::string& lp = loc.path;
-        if (lp.empty()) continue;
+        if (lp.empty()) 
+        continue;
         if (path.find(lp) == 0) {
             if (lp.size() > bestLen) { 
                 best = &loc; 
                 bestLen = lp.size(); }
         }
     }
+    std::cout << best->path << std::endl;
     return best;
 }
 
@@ -343,11 +346,28 @@ int startServer(const Server &server) {
                             break;
                         }
                         std::map<std::string, std::string> headers = parseHeaders(request);
+                        /*
+                        HTTP Connection Header Summary
+                        ------------------------------
+                        HTTP/1.0:
+                        - Default: connection closes after each response.
+                        - Connection: close      -> Explicit close (same as default).
+                        - Connection: keep-alive -> Try persistent connection (non-standard extension).
+                        - Connection: blabla     -> Unknown token; connection closes.
+
+                        HTTP/1.1:
+                        - Default: connection stays open (persistent).
+                        - Connection: keep-alive -> Redundant; connection stays open.
+                        - Connection: close      -> Server must close after the response.
+                        - Connection: blabla     -> ignore → connection stays open.
+                        */
                         bool client_wants_keepalive = true;
                         if (headers.find("connection") != headers.end()) {
                             std::string conn = headers["connection"];
-                            for (size_t i = 0; i < conn.size(); ++i) conn[i] = tolower(conn[i]);
-                            if (conn == "close") client_wants_keepalive = false;
+                            for (size_t i = 0; i < conn.size(); ++i) 
+                                conn[i] = tolower(conn[i]);
+                            if (conn == "close") 
+                                client_wants_keepalive = false;
                         }
                         if (version == "HTTP/1.0" && headers["connection"] != "Keep-Alive")
                             client_wants_keepalive = false;
@@ -437,12 +457,19 @@ int startServer(const Server &server) {
                         }
                         break; // process next ready fd
                     }
-                } else if (n == 0) {
+                }
+                //n will be 0 if the client closed the terminal => close the connection 
+                else if (n == 0) 
+                {
                     // client closed
                     toClose.push_back(fd);
                     break;
-                } else {
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+                }
+                //n will be -1 if the client is not writing anything in the terminal after entering the for (;;) 
+                else 
+                {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK) 
+                        break;
                     toClose.push_back(fd);
                     break;
                 }
