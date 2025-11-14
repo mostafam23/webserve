@@ -102,7 +102,8 @@ static std::string sanitizePath(const std::string& raw)
                 //Important note: the function does not allow escaping above root because it only pops if parts is non-empty. 
                 //This is safe behavior for preventing directory traversal above the root path you intended.
                 else if (seg == "..") {
-                    if (!parts.empty()) parts.pop_back();
+                    if (!parts.empty())
+                        parts.pop_back();
                 } 
                 else {
                     parts.push_back(seg);
@@ -159,8 +160,10 @@ static const Location* matchLocation(const Server& server, const std::string& pa
 
 static bool isMethodAllowed(const Location* loc, const std::string& method)
 {
-    if (!loc) return true; // no restriction
-    if (loc->methods.empty()) return true;//Example:location /images { root /var/www/img; }, No “allow” or “methods” defined → GET, POST, etc. are all allowed.
+    if (!loc)
+        return true; // no restriction
+    if (loc->methods.empty())
+        return true;//Example:location /images { root /var/www/img; }, No “allow” or “methods” defined → GET, POST, etc. are all allowed.
     //What does .find() return? If the method exists → it returns an iterator pointing to that element.
     //If the method does NOT exist → it returns end() iterator.
     return loc->methods.find(method) != loc->methods.end();
@@ -382,9 +385,11 @@ int startServer(const Server &server) {
                         // Routing: match location, enforce methods, resolve root and path
                         const Location* loc = matchLocation(server, path);
                         std::string effectiveRoot;
-                        if (loc && !loc->root.empty()) {
+                        if (loc && !loc->root.empty()) 
+                        {
                             effectiveRoot = loc->root;
-                        } else {
+                        } else 
+                        {
                             effectiveRoot = server.root;
                         }
                         std::string safePath = sanitizePath(path);
@@ -398,22 +403,30 @@ int startServer(const Server &server) {
                         }
                         // Build response (GET/HEAD minimal) with per-location root
                         std::string full_path = joinPaths(effectiveRoot, safePath);
-                        if (isDirectory(full_path)) {
+                        if (isDirectory(full_path)) 
+                        {
                             if (!full_path.empty() && full_path[full_path.size() - 1] != '/')
                                 full_path += "/";
                             full_path += server.index;
-                        }
+                        };
                         std::string contentType = "text/html";
                         size_t dot = full_path.find_last_of('.');
                         if (dot != std::string::npos) {
                             std::string ext = full_path.substr(dot);
-                            if (ext == ".css") contentType = "text/css";
-                            else if (ext == ".js") contentType = "application/javascript";
-                            else if (ext == ".json") contentType = "application/json";
-                            else if (ext == ".png") contentType = "image/png";
-                            else if (ext == ".jpg" || ext == ".jpeg") contentType = "image/jpeg";
-                            else if (ext == ".gif") contentType = "image/gif";
-                            else if (ext == ".ico") contentType = "image/x-icon";
+                            if (ext == ".css")
+                                contentType = "text/css";
+                            else if (ext == ".js")
+                                contentType = "application/javascript";
+                            else if (ext == ".json")
+                                contentType = "application/json";
+                            else if (ext == ".png")
+                                contentType = "image/png";
+                            else if (ext == ".jpg" || ext == ".jpeg")
+                                contentType = "image/jpeg";
+                            else if (ext == ".gif")
+                                contentType = "image/gif";
+                            else if (ext == ".ico")
+                                contentType = "image/x-icon";
                         }
 
                         std::string response;
