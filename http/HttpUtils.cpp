@@ -65,7 +65,6 @@ bool isRequestComplete(const char *buffer, size_t length)
         if (bodyLen < 0)
             bodyLen = 0;
         size_t total_needed = (size_t)headers_end + (size_t)bodyLen;
-        std::cout << "length: " << length;
         return length >= total_needed;
     }
     // No Content-Length and no chunked: assume no body (e.g., GET without body)

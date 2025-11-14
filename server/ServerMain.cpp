@@ -3,7 +3,7 @@
 #include "../signals/SignalHandler.hpp"
 #include "../concurrency/ClientRegistry.hpp"
 #include "../http/HttpUtils.hpp"
-#include "../utils/PathUtils.hpp"
+#include "../utils/Utils.hpp"
 #include "../logging/Logger.hpp"
 
 #include <arpa/inet.h>
@@ -447,7 +447,8 @@ int startServer(const Server &server) {
                                 response = buildErrorWithCustom(server, 404, "Not Found");
                                 client_wants_keepalive = false;
                             }
-                        } else if (method == "POST") {
+                        } 
+                        else if (method == "POST") {
                             // Simple POST handler that creates/updates the file
                             std::ofstream out(full_path.c_str(), std::ios::binary);
                             if (out) {
@@ -461,27 +462,32 @@ int startServer(const Server &server) {
                                     response += "Content-Length: 0\r\n";
                                     response += client_wants_keepalive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
                                     response += "\r\n";
-                                } else {
+                                } 
+                                else {
                                     response = buildErrorWithCustom(server, 400, "Bad Request: No request body");
                                     client_wants_keepalive = false;
                                 }
-                            } else {
+                            } 
+                            else {
                                 response = buildErrorWithCustom(server, 500, "Internal Server Error: Could not create file");
                                 client_wants_keepalive = false;
                             }
-                        } else if (method == "DELETE") {
+                        } 
+                        else if (method == "DELETE") {
                             if (std::remove(full_path.c_str()) == 0) {
                                 response = "HTTP/1.1 204 No Content\r\n";
                                 response += client_wants_keepalive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
                                 response += "\r\n";
-                            } else {
+                            } 
+                            else {
                                 response = buildErrorWithCustom(server, 404, "Not Found or could not delete");
                                 client_wants_keepalive = false;
                             }
-                        } else {
-                            response = buildErrorResponse(501, "Not Implemented");
-                            client_wants_keepalive = false;
                         }
+                        // else {
+                        //     response = buildErrorResponse(501, "Not Implemented");
+                        //     client_wants_keepalive = false;
+                        // }
                         // Send response (best-effort single send for now)
                         (void)send(fd, response.c_str(), response.size(), 0);
 

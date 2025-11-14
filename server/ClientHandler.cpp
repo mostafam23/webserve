@@ -2,7 +2,7 @@
 #include "../signals/SignalHandler.hpp"
 #include "../concurrency/ClientRegistry.hpp"
 #include "../http/HttpUtils.hpp"
-#include "../utils/PathUtils.hpp"
+#include "../utils/Utils.hpp"
 #include "../logging/Logger.hpp"
 
 #include <cerrno>
