@@ -41,14 +41,54 @@
         <section class="card" style="order:2">
           <div class="body">
             <h2 style="margin:0 0 10px">Upload a file</h2>
-            <p class="code">POST /upload</p>
-            <form action="/upload" method="POST" enctype="multipart/form-data">
-              <input type="file" name="file" />
-              <div style="display:flex;gap:10px;align-items:center">
-                <button class="btn" type="submit">Upload</button>
-                <span class="muted" style="color:var(--muted)">Max 5MB (example)</span>
-              </div>
-            </form>
+            <p class="code">POST /test.txt</p>
+            <!-- In index.html, replace the upload form section (around line 45) with: -->
+<form id="uploadForm" onsubmit="handleFileUpload(event)">
+  <input type="file" name="file" id="fileInput" required />
+  <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+    <button class="btn" type="submit">Upload</button>
+    <span id="uploadStatus" style="color:var(--muted)">Select a file to upload</span>
+  </div>
+  </form>
+  <script>
+    async function handleFileUpload(event) {
+      event.preventDefault();
+      const fileInput = document.getElementById('fileInput');
+      const statusEl = document.getElementById('uploadStatus');
+      
+      if (!fileInput.files.length) {
+        statusEl.textContent = '❌ Please select a file';
+        statusEl.style.color = 'red';
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        statusEl.textContent = '⏳ Uploading...';
+        statusEl.style.color = 'var(--muted)';
+        
+        // Send the file with its original name in the URL
+        const response = await fetch(`/${file.name}`, {
+          method: 'POST',
+          body: file
+        });
+
+        if (response.ok) {
+          statusEl.textContent = `✅ File uploaded to /${file.name}`;
+          statusEl.style.color = 'green';
+          fileInput.value = ''; // Clear the input
+        } else {
+          throw new Error(`Server returned ${response.status}`);
+        }
+      } catch (error) {
+        statusEl.textContent = `❌ Error: ${error.message}`;
+        statusEl.style.color = 'red';
+      }
+    }
+  </script>
           </div>
         </section>
       </div>

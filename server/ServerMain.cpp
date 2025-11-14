@@ -447,23 +447,37 @@ int startServer(const Server &server) {
                                 response = buildErrorWithCustom(server, 404, "Not Found");
                                 client_wants_keepalive = false;
                             }
-                        } else if (method == "HEAD") {
-                            std::ifstream f(full_path.c_str(), std::ios::binary);
-                            if (f) {
-                                f.seekg(0, std::ios::end);
-                                size_t size = f.tellg();
-                                response = "HTTP/1.1 200 OK\r\nContent-Type: " + contentType +
-                                           "\r\nContent-Length: " + intToString((int)size) + "\r\n";
+                        } else if (method == "POST") {
+                            // Simple POST handler that creates/updates the file
+                            std::ofstream out(full_path.c_str(), std::ios::binary);
+                            if (out) {
+                                // Get the request body (simplified - in real case, parse Content-Length and read body properly)
+                                size_t body_pos = request.find("\r\n\r\n") + 4;
+                                if (body_pos < request.length()) {
+                                    std::string body = request.substr(body_pos);
+                                    out << body;
+                                    response = "HTTP/1.1 201 Created\r\n";
+                                    response += "Content-Type: application/json\r\n";
+                                    response += "Content-Length: 0\r\n";
+                                    response += client_wants_keepalive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
+                                    response += "\r\n";
+                                } else {
+                                    response = buildErrorWithCustom(server, 400, "Bad Request: No request body");
+                                    client_wants_keepalive = false;
+                                }
+                            } else {
+                                response = buildErrorWithCustom(server, 500, "Internal Server Error: Could not create file");
+                                client_wants_keepalive = false;
+                            }
+                        } else if (method == "DELETE") {
+                            if (std::remove(full_path.c_str()) == 0) {
+                                response = "HTTP/1.1 204 No Content\r\n";
                                 response += client_wants_keepalive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
                                 response += "\r\n";
                             } else {
-                                response = buildErrorWithCustom(server, 404, "Not Found");
+                                response = buildErrorWithCustom(server, 404, "Not Found or could not delete");
                                 client_wants_keepalive = false;
                             }
-                        } else if (method == "OPTIONS") {
-                            response = "HTTP/1.1 200 OK\r\nAllow: GET, HEAD, POST, PUT, DELETE, OPTIONS\r\nContent-Length: 0\r\n";
-                            response += client_wants_keepalive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
-                            response += "\r\n";
                         } else {
                             response = buildErrorResponse(501, "Not Implemented");
                             client_wants_keepalive = false;
