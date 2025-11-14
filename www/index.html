@@ -24,80 +24,581 @@
     </header>
 
     <main class="main">
-      <div class="container hero">
-        <section class="card" style="order:1">
-          <div class="body">
-            <span class="badge">Welcome</span>
-            <h1 style="margin:10px 0 6px">Welcome to My Webserv</h1>
-            <p style="color:var(--muted);margin:0 0 18px">
-              A clean, responsive demo site served by your C++ web server.
-            </p>
-            <div class="alert">
-              TIP: Try visiting <span class="kbd">/errors/404.html</span> or upload a file below.
-            </div>
-          </div>
-        </section>
-
-        <section class="card" style="order:2">
-          <div class="body">
-            <h2 style="margin:0 0 10px">Upload a file</h2>
-            <p class="code">POST /test.txt</p>
-            <!-- In index.html, replace the upload form section (around line 45) with: -->
-<form id="uploadForm" onsubmit="handleFileUpload(event)">
-  <input type="file" name="file" id="fileInput" required />
-  <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
-    <button class="btn" type="submit">Upload</button>
-    <span id="uploadStatus" style="color:var(--muted)">Select a file to upload</span>
-  </div>
-  </form>
-  <script>
-    async function handleFileUpload(event) {
-      event.preventDefault();
-      const fileInput = document.getElementById('fileInput');
-      const statusEl = document.getElementById('uploadStatus');
-      
-      if (!fileInput.files.length) {
-        statusEl.textContent = '❌ Please select a file';
-        statusEl.style.color = 'red';
-        return;
-      }
-
-      const file = fileInput.files[0];
-      const formData = new FormData();
-      formData.append('file', file);
-
-      try {
-        statusEl.textContent = '⏳ Uploading...';
-        statusEl.style.color = 'var(--muted)';
-        
-        // Send the file with its original name in the URL
-        const response = await fetch(`/${file.name}`, {
-          method: 'POST',
-          body: file
-        });
-
-        if (response.ok) {
-          statusEl.textContent = `✅ File uploaded to /${file.name}`;
-          statusEl.style.color = 'green';
-          fileInput.value = ''; // Clear the input
-        } else {
-          throw new Error(`Server returned ${response.status}`);
-        }
-      } catch (error) {
-        statusEl.textContent = `❌ Error: ${error.message}`;
-        statusEl.style.color = 'red';
-      }
-    }
-  </script>
-          </div>
-        </section>
-      </div>
-
       <div class="container">
-        <section class="grid cols-3">
-          <div class="card"><div class="body"><h3>Fast</h3><p style="color:var(--muted)">Lightweight static pages for quick load times.</p></div></div>
-          <div class="card"><div class="body"><h3>Modern</h3><p style="color:var(--muted)">Responsive layout, clean design, and accessible components.</p></div></div>
-          <div class="card"><div class="body"><h3>Extensible</h3><p style="color:var(--muted)">Add routes, CGI endpoints, and APIs as you grow.</p></div></div>
+        <section class="card">
+          <div class="body">
+            <div class="page-header">
+              <h1>File Management</h1>
+              <p class="subtitle">Upload, view, and manage files on the server</p>
+            </div>
+            
+            <div class="grid-layout">
+              <!-- Upload Card -->
+              <div class="card feature-card">
+                <div class="card-icon">📤</div>
+                <h3>Upload File</h3>
+                <p class="card-description">Upload a new file to the server using HTTP POST</p>
+                
+                <div class="form-group">
+                  <label for="fileInput" class="form-label">Choose File</label>
+                  <div class="file-upload">
+                    <input type="file" id="fileInput" class="file-input" required>
+                    <label for="fileInput" class="file-label">
+                      <span class="file-button">Browse</span>
+                      <span class="file-name">No file selected</span>
+                    </label>
+                  </div>
+                </div>
+                
+                <div class="form-group">
+                  <label for="fileNameInput" class="form-label">Custom Filename (optional)</label>
+                  <input type="text" id="fileNameInput" class="form-control" placeholder="example.txt">
+                  <div class="form-hint">Leave empty to use the original filename</div>
+                </div>
+                
+                <button class="btn btn-primary btn-block" onclick="handleFileUpload(event)">
+                  <span class="btn-icon">⬆️</span> Upload File
+                </button>
+                <div id="uploadStatus" class="status-message">Ready to upload</div>
+              </div>
+              
+              <!-- File Actions Card -->
+              <div class="card feature-card">
+                <div class="card-icon">📋</div>
+                <h3>File Content</h3>
+                <p class="card-description">View and manage file contents</p>
+                
+                <div class="file-actions">
+                  <button class="btn btn-outline" onclick="viewFile()" id="viewBtn">
+                    <span class="btn-icon">👁️</span> View File
+                  </button>
+                  <button class="btn btn-outline btn-danger" onclick="deleteFile()" id="deleteBtn">
+                    <span class="btn-icon">🗑️</span> Delete
+                  </button>
+                </div>
+                
+                <div id="fileActionsStatus" class="status-message"></div>
+                
+                <div class="file-preview">
+                  <div class="file-preview-header">
+                    <span>File Preview</span>
+                    <button class="btn-icon" onclick="copyFileContent()" title="Copy to clipboard">
+                      📋
+                    </button>
+                  </div>
+                  <pre id="fileContent" class="file-content">Select a file to view its content</pre>
+                </div>
+              </div>
+            </div>
+
+            <script>
+              // Update file name display when file is selected
+              document.getElementById('fileInput').addEventListener('change', function(e) {
+                const fileName = e.target.files[0] ? e.target.files[0].name : 'No file selected';
+                document.querySelector('.file-name').textContent = fileName;
+                
+                // Auto-fill filename input if empty
+                const fileNameInput = document.getElementById('fileNameInput');
+                if (!fileNameInput.value && e.target.files[0]) {
+                  fileNameInput.value = e.target.files[0].name;
+                }
+              });
+
+              async function handleFileUpload(event) {
+                event.preventDefault();
+                const fileInput = document.getElementById('fileInput');
+                const fileNameInput = document.getElementById('fileNameInput');
+                const statusEl = document.getElementById('uploadStatus');
+                const uploadBtn = document.querySelector('.btn-primary');
+                
+                if (!fileInput.files.length) {
+                  showStatus('Please select a file to upload', 'error');
+                  return;
+                }
+
+                const file = fileInput.files[0];
+                let targetFilename = fileNameInput.value.trim();
+                
+                // If no custom filename is provided, use the original filename
+                targetFilename = targetFilename || file.name;
+                
+                // Ensure the filename has an extension
+                if (!targetFilename.includes('.')) {
+                  const fileExt = file.name.split('.').pop();
+                  targetFilename += '.' + fileExt;
+                }
+
+                // Sanitize filename
+                targetFilename = targetFilename.replace(/[^\w\-. ]/gi, '_');
+
+                try {
+                  // UI feedback
+                  uploadBtn.disabled = true;
+                  uploadBtn.innerHTML = '<span class="btn-icon">⏳</span> Uploading...';
+                  showStatus('Checking file...', 'info');
+                  
+                  // Check if file exists
+                  const checkResponse = await fetch(`/${encodeURIComponent(targetFilename)}`, {
+                    method: 'HEAD'
+                  });
+
+                  if (checkResponse.ok) {
+                    showStatus(`A file named "${targetFilename}" already exists.`, 'error');
+                    uploadBtn.disabled = false;
+                    uploadBtn.innerHTML = '<span class="btn-icon">⬆️</span> Try Again';
+                    return;
+                  }
+
+                  // Upload file
+                  showStatus('Uploading file...', 'info');
+                  const response = await fetch(`/${encodeURIComponent(targetFilename)}`, {
+                    method: 'POST',
+                    body: file,
+                    headers: {
+                      'X-Original-Filename': file.name,
+                      'Content-Type': 'application/octet-stream'
+                    }
+                  });
+
+                  if (response.ok) {
+                    showStatus(`File uploaded successfully to /${targetFilename}`, 'success');
+                    fileInput.value = '';
+                    fileNameInput.value = '';
+                    document.querySelector('.file-name').textContent = 'No file selected';
+                    viewFile();
+                  } else {
+                    throw new Error(`Server returned ${response.status}`);
+                  }
+                } catch (error) {
+                  console.error('Upload error:', error);
+                  showStatus(`Upload failed: ${error.message}`, 'error');
+                } finally {
+                  uploadBtn.disabled = false;
+                  uploadBtn.innerHTML = '<span class="btn-icon">⬆️</span> Upload File';
+                }
+              }
+
+              async function deleteFile() {
+                const statusEl = document.getElementById('fileActionsStatus');
+                const fileNameInput = document.getElementById('fileNameInput');
+                const deleteBtn = document.getElementById('deleteBtn');
+                let targetFilename = fileNameInput.value.trim() || 'test.txt';
+                
+                if (!confirm(`Are you sure you want to delete "${targetFilename}"?`)) {
+                  return;
+                }
+                
+                try {
+                  deleteBtn.disabled = true;
+                  deleteBtn.innerHTML = '<span class="btn-icon">⏳</span> Deleting...';
+                  showStatus('Deleting file...', 'info', 'fileActionsStatus');
+                  
+                  const response = await fetch(`/${encodeURIComponent(targetFilename)}`, { 
+                    method: 'DELETE' 
+                  });
+                  
+                  if (response.status === 204) {
+                    showStatus('File deleted successfully!', 'success', 'fileActionsStatus');
+                    document.getElementById('fileContent').textContent = 'No file selected';
+                  } else {
+                    throw new Error(`${response.status} ${response.statusText}`);
+                  }
+                } catch (err) {
+                  console.error('Delete error:', err);
+                  showStatus(`Delete failed: ${err.message}`, 'error', 'fileActionsStatus');
+                } finally {
+                  deleteBtn.disabled = false;
+                  deleteBtn.innerHTML = '<span class="btn-icon">🗑️</span> Delete';
+                }
+              }
+
+              async function viewFile() {
+                const contentEl = document.getElementById('fileContent');
+                const viewBtn = document.getElementById('viewBtn');
+                const fileNameInput = document.getElementById('fileNameInput');
+                let targetFilename = fileNameInput.value.trim() || 'test.txt';
+                
+                try {
+                  viewBtn.disabled = true;
+                  viewBtn.innerHTML = '<span class="btn-icon">⏳</span> Loading...';
+                  
+                  const response = await fetch(`/${encodeURIComponent(targetFilename)}`);
+                  
+                  if (response.ok) {
+                    const content = await response.text();
+                    contentEl.textContent = content || '(File is empty)';
+                    contentEl.scrollTop = 0;
+                    showStatus('File loaded successfully', 'success', 'fileActionsStatus');
+                  } else {
+                    throw new Error(`${response.status} ${response.statusText}`);
+                  }
+                } catch (err) {
+                  console.error('View error:', err);
+                  contentEl.textContent = `Error: ${err.message}`;
+                  showStatus('Failed to load file', 'error', 'fileActionsStatus');
+                } finally {
+                  viewBtn.disabled = false;
+                  viewBtn.innerHTML = '<span class="btn-icon">👁️</span> View File';
+                }
+              }
+
+              function copyFileContent() {
+                const contentEl = document.getElementById('fileContent');
+                navigator.clipboard.writeText(contentEl.textContent)
+                  .then(() => showStatus('Content copied to clipboard!', 'success', 'fileActionsStatus'))
+                  .catch(err => showStatus('Failed to copy: ' + err.message, 'error', 'fileActionsStatus'));
+              }
+
+              function showStatus(message, type = 'info', elementId = 'uploadStatus') {
+                const statusEl = document.getElementById(elementId);
+                if (!statusEl) return;
+                
+                statusEl.textContent = message;
+                statusEl.className = 'status-message';
+                
+                switch (type) {
+                  case 'success':
+                    statusEl.classList.add('status-success');
+                    break;
+                  case 'error':
+                    statusEl.classList.add('status-error');
+                    break;
+                  case 'info':
+                  default:
+                    statusEl.classList.add('status-info');
+                }
+                
+                // Auto-hide success messages after 5 seconds
+                if (type === 'success') {
+                  setTimeout(() => {
+                    if (statusEl.textContent === message) {
+                      statusEl.textContent = '';
+                      statusEl.className = 'status-message';
+                    }
+                  }, 5000);
+                }
+              }
+
+              // Load file content when page loads
+              document.addEventListener('DOMContentLoaded', viewFile);
+            </script>
+            
+            <style>
+              /* Layout */
+              .page-header {
+                text-align: center;
+                margin-bottom: 2.5rem;
+              }
+              
+              .page-header h1 {
+                margin: 0 0 0.5rem;
+                font-size: 2rem;
+                color: var(--text);
+              }
+              
+              .page-header .subtitle {
+                color: var(--muted);
+                font-size: 1.1rem;
+                margin: 0;
+              }
+              
+              .grid-layout {
+                display: grid;
+                gap: 1.5rem;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+              }
+              
+              .feature-card {
+                padding: 1.5rem;
+                transition: transform 0.2s, box-shadow 0.2s;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+              }
+              
+              .feature-card:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+              }
+              
+              .card-icon {
+                font-size: 2rem;
+                margin-bottom: 1rem;
+                display: inline-block;
+              }
+              
+              .card h3 {
+                margin: 0 0 0.5rem;
+                color: var(--text);
+              }
+              
+              .card-description {
+                color: var(--muted);
+                margin: 0 0 1.5rem;
+                font-size: 0.95rem;
+              }
+              
+              /* Form Elements */
+              .form-group {
+                margin-bottom: 1.25rem;
+              }
+              
+              .form-label {
+                display: block;
+                margin-bottom: 0.5rem;
+                font-weight: 500;
+                color: var(--text);
+              }
+              
+              .form-control {
+                width: 100%;
+                padding: 0.65rem 0.75rem;
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                font-size: 0.95rem;
+                transition: border-color 0.2s;
+                background: var(--bg-secondary);
+                color: var(--text);
+              }
+              
+              .form-control:focus {
+                outline: none;
+                border-color: var(--primary);
+                box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.1);
+              }
+              
+              .form-hint {
+                font-size: 0.8rem;
+                color: var(--muted);
+                margin-top: 0.25rem;
+              }
+              
+              /* File Upload */
+              .file-upload {
+                position: relative;
+                margin-bottom: 0.5rem;
+              }
+              
+              .file-input {
+                position: absolute;
+                width: 0.1px;
+                height: 0.1px;
+                opacity: 0;
+                overflow: hidden;
+                z-index: -1;
+              }
+              
+              .file-label {
+                display: flex;
+                align-items: center;
+                cursor: pointer;
+                width: 100%;
+              }
+              
+              .file-button {
+                background: var(--primary);
+                color: white;
+                padding: 0.5rem 1rem;
+                border-radius: 4px;
+                margin-right: 0.75rem;
+                font-size: 0.9rem;
+                transition: background 0.2s;
+              }
+              
+              .file-button:hover {
+                background: var(--primary-dark);
+              }
+              
+              .file-name {
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                color: var(--text);
+                font-size: 0.9rem;
+              }
+              
+              /* Buttons */
+              .btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                padding: 0.6rem 1.25rem;
+                border: none;
+                border-radius: 4px;
+                font-weight: 500;
+                font-size: 0.95rem;
+                cursor: pointer;
+                transition: all 0.2s;
+                text-align: center;
+              }
+              
+              .btn-primary {
+                background: var(--primary);
+                color: white;
+                margin-top: 0.5rem;
+              }
+              
+              .btn-primary:hover:not(:disabled) {
+                background: var(--primary-dark);
+                transform: translateY(-1px);
+              }
+              
+              .btn-outline {
+                background: transparent;
+                border: 1px solid var(--border);
+                color: var(--text);
+              }
+              
+              .btn-outline:hover:not(:disabled) {
+                background: var(--bg-secondary);
+                border-color: var(--border-hover);
+              }
+              
+              .btn-danger {
+                color: #e53e3e;
+                border-color: #e53e3e;
+              }
+              
+              .btn-danger:hover:not(:disabled) {
+                background: #fff5f5;
+              }
+              
+              .btn-block {
+                display: flex;
+                width: 100%;
+              }
+              
+              .btn-icon {
+                margin-right: 0.5rem;
+                display: inline-flex;
+              }
+              
+              .btn:disabled {
+                opacity: 0.7;
+                cursor: not-allowed;
+              }
+              
+              /* File Preview */
+              .file-preview {
+                margin-top: 1.5rem;
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                overflow: hidden;
+                flex-grow: 1;
+                display: flex;
+                flex-direction: column;
+                background: var(--bg-secondary);
+              }
+              
+              .file-preview-header {
+                padding: 0.75rem 1rem;
+                background: var(--bg-tertiary);
+                border-bottom: 1px solid var(--border);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                font-weight: 500;
+              }
+              
+              .file-content {
+                flex-grow: 1;
+                padding: 1rem;
+                margin: 0;
+                overflow: auto;
+                font-family: 'Fira Code', 'Consolas', monospace;
+                font-size: 0.9rem;
+                line-height: 1.5;
+                color: var(--text);
+                background: var(--bg-secondary);
+                border: none;
+                white-space: pre-wrap;
+                word-break: break-word;
+              }
+              
+              .file-actions {
+                display: flex;
+                gap: 0.75rem;
+                margin: 1rem 0;
+              }
+              
+              /* Status Messages */
+              .status-message {
+                margin-top: 1rem;
+                padding: 0.75rem;
+                border-radius: 4px;
+                font-size: 0.9rem;
+                opacity: 0;
+                height: 0;
+                overflow: hidden;
+                transition: all 0.2s;
+              }
+              
+              .status-message:not(:empty) {
+                opacity: 1;
+                height: auto;
+                margin-top: 1rem;
+                padding: 0.75rem;
+              }
+              
+              .status-success {
+                background: #f0fdf4;
+                color: #166534;
+                border: 1px solid #bbf7d0;
+              }
+              
+              .status-error {
+                background: #fef2f2;
+                color: #991b1b;
+                border: 1px solid #fecaca;
+              }
+              
+              .status-info {
+                background: #eff6ff;
+                color: #1e40af;
+                border: 1px solid #bfdbfe;
+              }
+              
+              /* Responsive Adjustments */
+              @media (max-width: 768px) {
+                .grid-layout {
+                  grid-template-columns: 1fr;
+                }
+                
+                .file-actions {
+                  flex-direction: column;
+                }
+                
+                .file-actions .btn {
+                  width: 100%;
+                }
+              }
+              
+              /* Dark mode adjustments */
+              @media (prefers-color-scheme: dark) {
+                .file-preview, .file-content {
+                  background: var(--bg-secondary);
+                }
+                
+                .file-preview-header {
+                  background: var(--bg-tertiary);
+                }
+                
+                .form-control {
+                  background: var(--bg-secondary);
+                  border-color: var(--border);
+                  color: var(--text);
+                }
+                
+                .btn-outline {
+                  border-color: var(--border);
+                }
+                
+                .btn-outline:hover:not(:disabled) {
+                  background: var(--bg-tertiary);
+                }
+              }
+            </style>
+          </div>
         </section>
       </div>
     </main>
