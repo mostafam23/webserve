@@ -1,5 +1,4 @@
 #include "ServerMain.hpp"
-#include "ClientHandler.hpp"
 #include "../signals/SignalHandler.hpp"
 #include "../concurrency/ClientRegistry.hpp"
 #include "../http/HttpUtils.hpp"

@@ -13,7 +13,6 @@ SRCS = main.cpp \
        concurrency/ClientRegistry.cpp \
        http/HttpUtils.cpp \
        utils/Utils.cpp \
-       server/ClientHandler.cpp \
        server/ServerMain.cpp \
        app/App.cpp \
        app/ArgValidation.cpp
