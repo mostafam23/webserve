@@ -38,24 +38,27 @@ int App::run(int argc, char* argv[]) {
     std::cout << "Debug mode: ON (colored logs enabled)\n";
     if (!args.empty())
         std::cout << "Config file: " << args[0] << std::endl;
-
-    // Signals
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
 
-    // Build server via config source and start
-    Server server;
-    server = src->buildServer();
+    // Build servers via config source and start
+    Servers servers = src->buildServers();
     if (!args.empty())
         std::cout << "Configuration parsed successfully!\n";
 
-    std::cout << "\nServer Configuration:\n";
-    std::cout << "  Host:        " << server.host << "\n";
-    std::cout << "  Port:        " << server.listen << "\n";
-    std::cout << "  Server Name: " << server.server_name << "\n";
-    std::cout << "  Root:        " << server.root << "\n";
-    std::cout << "  Index:       " << server.index << "\n";
-    std::cout << "  Max Size:    " << server.max_size << "\n\n";
+    std::cout << "\n=== Server Configurations ===\n";
+    for (size_t i = 0; i < servers.count(); ++i) {
+        const Server& server = servers.servers[i];
+        std::cout << "Server " << (i + 1) << ":\n";
+        std::cout << "  Host:        " << server.host << "\n";
+        std::cout << "  Port:        " << server.listen << "\n";
+        std::cout << "  Server Name: " << server.server_name << "\n";
+        std::cout << "  Root:        " << server.root << "\n";
+        std::cout << "  Index:       " << server.index << "\n";
+        std::cout << "  Max Size:    " << server.max_size << "\n";
+        if (i < servers.count() - 1) std::cout << "\n";
+    }
+    std::cout << "==============================\n\n";
 
-    return startServer(server);
+    return startServers(servers);
 }

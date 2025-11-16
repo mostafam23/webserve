@@ -306,6 +306,288 @@ Server ConfigParser::parseServer()
     return server;
 }
 
+Servers ConfigParser::parseServers()
+{
+    Servers servers;
+
+    std::ifstream file(filename.c_str());
+    if (!file.is_open())
+    {
+        std::cerr << "Error: Cannot open config file: " << filename << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    std::string line;
+    Location currentLoc;
+    bool inLocation = false;
+    bool inServer = false;
+    int lineNum = 0;
+    Server currentServer;
+
+    while (std::getline(file, line))
+    {
+        lineNum++;
+
+        line = cp_removeComments(line);
+        line = trim(line);
+
+        if (line.empty())
+            continue;
+
+        // Detect start of a server block
+        if (line.find("server") == 0 && !inServer)
+        {
+            std::string afterServer = line.substr(6);
+            afterServer = trim(afterServer);
+
+            if (afterServer.empty())
+            {
+                // "server" alone - look for { on next line
+                inServer = true;
+                currentServer = Server(); // Reset for new server
+                continue;
+            }
+            else if (afterServer == "{" || afterServer.find("{") == 0)
+            {
+                // "server {" on same line
+                inServer = true;
+                currentServer = Server(); // Reset for new server
+                continue;
+            }
+            else
+            {
+                std::cerr << "Error: Unexpected text after 'server' at line " << lineNum
+                          << ": \"" << afterServer << "\"" << std::endl;
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        // If we're waiting for opening brace after server
+        if (inServer && line == "{")
+        {
+            continue;
+        }
+
+        if (!inServer)
+            continue;
+
+        // Check for semicolons
+        if (lineRequiresSemicolon(line) && line[line.size() - 1] != ';')
+        {
+            std::cerr << "Error: Missing semicolon at line " << lineNum
+                      << ": \"" << line << "\"" << std::endl;
+            exit(EXIT_FAILURE);
+        }
+
+        if (line == "}" || line.find("}") == 0)
+        {
+            if (inLocation)
+            {
+                if (currentServer.location_count < 10)
+                    currentServer.locations[currentServer.location_count++] = currentLoc;
+                else
+                    std::cerr << "Warning: Maximum 10 locations supported. Ignoring location: "
+                              << currentLoc.path << std::endl;
+                inLocation = false;
+            }
+            else if (inServer)
+            {
+                inServer = false;
+                // Add completed server to servers collection
+                if (currentServer.listen <= 0 || currentServer.listen > 65535)
+                {
+                    std::cerr << "Warning: Invalid port number for server, using default 8080" << std::endl;
+                    currentServer.listen = 8080;
+                }
+                if (currentServer.root.empty())
+                {
+                    std::cerr << "Warning: 'root' directive not found for server, using default './www'" << std::endl;
+                    currentServer.root = "./www";
+                }
+                servers.addServer(currentServer);
+                continue;
+            }
+            continue;
+        }
+
+        // Parse listen directive
+        if (line.find("listen") == 0)
+        {
+            std::string val = getValue(line);
+            if (!val.empty())
+            {
+                size_t colonPos = val.find(':');
+                if (colonPos != std::string::npos)
+                {
+                    currentServer.host = val.substr(0, colonPos);
+                    std::string portStr = val.substr(colonPos + 1);
+                    currentServer.listen = atoi(portStr.c_str());
+                }
+                else
+                {
+                    currentServer.listen = atoi(val.c_str());
+                }
+
+                if (currentServer.listen <= 0 || currentServer.listen > 65535)
+                {
+                    std::cerr << "Error: Invalid port number at line " << lineNum << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+            }
+            else
+            {
+                std::cerr << "Error: Missing value for 'listen' at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+        }
+        else if (line.find("max_size") == 0)
+        {
+            std::string val = getValue(line);
+            if (val.empty())
+            {
+                std::cerr << "Error: Missing value for 'max_size' at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            currentServer.max_size = val;
+        }
+        else if (line.find("server_name") == 0)
+        {
+            std::string val = getValue(line);
+            if (val.empty())
+            {
+                std::cerr << "Error: Missing value for 'server_name' at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            currentServer.server_name = val;
+        }
+        else if (line.find("root") == 0 && !inLocation)
+        {
+            std::string val = getValue(line);
+            if (val.empty())
+            {
+                std::cerr << "Error: Missing value for 'root' at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            currentServer.root = val;
+        }
+        else if (line.find("index") == 0 && !inLocation)
+        {
+            std::string val = getValue(line);
+            if (val.empty())
+            {
+                std::cerr << "Error: Missing value for 'index' at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            currentServer.index = val;
+        }
+        else if (line.find("error_page") == 0 && !inLocation)
+        {
+            std::string val = getValue(line);
+            if (val.empty())
+            {
+                std::cerr << "Error: Missing value for 'error_page' at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            size_t spacePos = val.find(' ');
+            if (spacePos != std::string::npos)
+            {
+                int errorCode = atoi(val.substr(0, spacePos).c_str());
+                std::string errorPath = val.substr(spacePos + 1);
+                currentServer.error_pages[errorCode] = errorPath;
+            }
+            else
+            {
+                std::cerr << "Error: Invalid error_page format at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+        }
+        else if (line.find("location") == 0 && !inLocation)
+        {
+            std::string val = getValue(line);
+            if (val.empty())
+            {
+                std::cerr << "Error: Missing value for 'location' at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            currentLoc = Location();
+            currentLoc.path = val;
+            inLocation = true;
+            continue;
+        }
+
+        // Parse location-specific directives
+        if (inLocation)
+        {
+            if (line.find("methods") == 0)
+            {
+                std::string val = getValue(line);
+                if (val.empty())
+                {
+                    std::cerr << "Error: Missing value for 'methods' at line " << lineNum << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+                std::istringstream iss(val);
+                std::string method;
+                while (iss >> method)
+                {
+                    if (method == "GET")
+                        currentLoc.allow_get = true;
+                    else if (method == "POST")
+                        currentLoc.allow_post = true;
+                    else if (method == "DELETE")
+                        currentLoc.allow_delete = true;
+                }
+            }
+            else if (line.find("root") == 0)
+            {
+                std::string val = getValue(line);
+                if (val.empty())
+                {
+                    std::cerr << "Error: Missing value for 'root' at line " << lineNum << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+                currentLoc.root = val;
+            }
+            else if (line.find("cgi_extension") == 0)
+            {
+                std::string val = getValue(line);
+                if (val.empty())
+                {
+                    std::cerr << "Error: Missing value for 'cgi_extension' at line " << lineNum << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+                currentLoc.cgi_extension = val;
+            }
+        }
+    }
+
+    // Handle case where file ends without closing server block
+    if (inServer)
+    {
+        std::cerr << "Warning: Unclosed server block at end of file" << std::endl;
+        if (currentServer.listen <= 0 || currentServer.listen > 65535)
+        {
+            std::cerr << "Warning: Invalid port number for server, using default 8080" << std::endl;
+            currentServer.listen = 8080;
+        }
+        if (currentServer.root.empty())
+        {
+            std::cerr << "Warning: 'root' directive not found for server, using default './www'" << std::endl;
+            currentServer.root = "./www";
+        }
+        servers.addServer(currentServer);
+    }
+
+    // If no servers were found, create a default server
+    if (servers.empty())
+    {
+        std::cerr << "Warning: No server blocks found in config file, using default server" << std::endl;
+        servers.addServer(Server());
+    }
+
+    return servers;
+}
+
 std::string ConfigParser::getFilename() const
 {
     return filename;

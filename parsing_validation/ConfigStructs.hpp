@@ -4,17 +4,24 @@
 #include <string>
 #include <map>
 #include <set>
+#include <vector>
 
 struct Location {
     std::string path;
     std::set<std::string> methods;
     std::string root;
     std::string cgi_extension;
+    bool allow_get;
+    bool allow_post;
+    bool allow_delete;
 
     Location() {
         path = "";
         root = "";
         cgi_extension = "";
+        allow_get = true;
+        allow_post = true;
+        allow_delete = true;
     }
 };
 
@@ -37,6 +44,25 @@ struct Server {
         root = "./www";
         index = "index.html";
         location_count = 0;
+    }
+};
+
+// Container for multiple server configurations
+struct Servers {
+    std::vector<Server> servers;
+    
+    Servers() {}
+    
+    void addServer(const Server& server) {
+        servers.push_back(server);
+    }
+    
+    size_t count() const {
+        return servers.size();
+    }
+    
+    bool empty() const {
+        return servers.empty();
     }
 };
 

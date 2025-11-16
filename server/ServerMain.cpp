@@ -315,7 +315,7 @@ int startServer(const Server &server) {
                 clients.insert(client_sock);
                 recvBuf[client_sock] = std::string();
                 reqCount[client_sock] = 0;
-                addClient(client_sock);
+                addClient(client_sock, 1);
             }
         }
         // Handle readable clients
@@ -377,7 +377,7 @@ int startServer(const Server &server) {
                             client_wants_keepalive = false;
                         // Log request
                         std::ostringstream rlog;
-                        rlog << "[REQUEST #" << reqCount[fd] << "] Client " << fd << ": "
+                        rlog << "[REQUEST #" << reqCount[fd] << "] Client " << fd << " (Server 1): "
                              << method << " " << path << " " << version
                              << (client_wants_keepalive ? " (keep-alive)" : " (close)");
                         Logger::request(rlog.str());
@@ -537,5 +537,394 @@ int startServer(const Server &server) {
               << " active connections" << std::endl;
 
     std::cout << "✅ Server stopped gracefully" << std::endl;
+    return EXIT_SUCCESS;
+}
+
+int startServers(const Servers &servers) {
+    if (servers.empty()) {
+        std::cerr << "Error: No servers to start" << std::endl;
+        return EXIT_FAILURE;
+    }
+    // Clear any existing server sockets
+    g_server_socks.clear();
+    // Create and bind all server sockets
+    std::vector<sockaddr_in> server_addrs;
+    for (size_t i = 0; i < servers.count(); ++i) {
+        const Server& server = servers.servers[i];
+        
+        int server_sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (server_sock < 0) {
+            perror("socket");
+            // Close previously created sockets
+            for (size_t j = 0; j < g_server_socks.size(); ++j) {
+                close(g_server_socks[j]);
+            }
+            return EXIT_FAILURE;
+        }
+        
+        int opt = 1;
+        setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+        
+        sockaddr_in addr;
+        std::memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(server.listen);
+        
+        if (!server.host.empty()) {
+            if (!parseIPv4(server.host, &addr.sin_addr)) {
+                addr.sin_addr.s_addr = htonl(INADDR_ANY);
+            }
+        } else {
+            addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        }
+        
+        if (bind(server_sock, (sockaddr *)&addr, sizeof(addr)) < 0) {
+            perror("bind");
+            close(server_sock);
+            // Close previously created sockets
+            for (size_t j = 0; j < g_server_socks.size(); ++j) {
+                close(g_server_socks[j]);
+            }
+            return EXIT_FAILURE;
+        }
+        
+        if (listen(server_sock, 128) < 0) {
+            perror("listen");
+            close(server_sock);
+            // Close previously created sockets
+            for (size_t j = 0; j < g_server_socks.size(); ++j) {
+                close(g_server_socks[j]);
+            }
+            return EXIT_FAILURE;
+        }
+        
+        setNonBlocking(server_sock);
+        g_server_socks.push_back(server_sock);
+        server_addrs.push_back(addr);
+        
+        std::cout << "✅ Server " << (i + 1) << " listening on http://" 
+                  << server.host << ":" << server.listen << std::endl;
+    }
+    
+    std::cout << "Press Ctrl+C to stop the servers\n==============================\n";
+    
+    // Set backward compatibility variable to first server socket
+    if (!g_server_socks.empty()) {
+        g_server_sock = g_server_socks[0];
+    }
+    
+    // Per-client buffers and request counters
+    std::map<int, std::string> recvBuf;
+    std::map<int, int> reqCount;
+    std::set<int> clients;
+    
+    while (!g_shutdown) {
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        
+        int maxfd = -1;
+        
+        // Add all server sockets to select set
+        for (size_t i = 0; i < g_server_socks.size(); ++i) {
+            if (g_server_socks[i] != -1) {
+                FD_SET(g_server_socks[i], &readfds);
+                if (g_server_socks[i] > maxfd) {
+                    maxfd = g_server_socks[i];
+                }
+            }
+        }
+        
+        // Add all client sockets to select set
+        for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it) {
+            FD_SET(*it, &readfds);
+            if (*it > maxfd) {
+                maxfd = *it;
+            }
+        }
+        
+        if (maxfd == -1) {
+            // No valid file descriptors
+            break;
+        }
+        
+        timeval tv;
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+        
+        int ready = select(maxfd + 1, &readfds, NULL, NULL, &tv);
+        if (ready < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            perror("select");
+            break;
+        }
+        
+        // Check for new connections on any server socket
+        for (size_t i = 0; i < g_server_socks.size(); ++i) {
+            if (g_server_socks[i] != -1 && FD_ISSET(g_server_socks[i], &readfds)) {
+                sockaddr_in client_addr;
+                socklen_t client_len = sizeof(client_addr);
+                
+                for (;;) {
+                    int client_sock = accept(g_server_socks[i], (sockaddr *)&client_addr, &client_len);
+                    if (client_sock < 0) {
+                        if (errno == EAGAIN) {
+                            break;
+                        }
+                        if (errno == EINTR) {
+                            continue;
+                        }
+                        perror("accept");
+                        break;
+                    }
+                    
+                    setNonBlocking(client_sock);
+                    clients.insert(client_sock);
+                    recvBuf[client_sock] = std::string();
+                    reqCount[client_sock] = 0;
+                    addClient(client_sock, i + 1);
+                }
+            }
+        }
+        
+        // Handle readable clients (same logic as original)
+        std::vector<int> toClose;
+        for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it) {
+            int fd = *it;
+            if (!FD_ISSET(fd, &readfds)) {
+                continue;
+            }
+            
+            char buffer[8192];
+            for (;;) {
+                ssize_t n = recv(fd, buffer, sizeof(buffer), 0);
+                if (n > 0) {
+                    recvBuf[fd].append(buffer, n);
+                    if (isRequestComplete(recvBuf[fd].c_str(), (int)recvBuf[fd].size())) {
+                        // Process request (same logic as original)
+                        std::string request = recvBuf[fd];
+                        reqCount[fd]++;
+                        std::istringstream iss(request);
+                        std::string method, path, version;
+                        iss >> method >> path >> version;
+                        
+                        if (method.empty() || path.empty() || version.empty()) {
+                            std::string error = buildErrorResponse(400, "Invalid request");
+                            send(fd, error.c_str(), error.size(), 0);
+                            toClose.push_back(fd);
+                            break;
+                        }
+                        
+                        std::map<std::string, std::string> headers = parseHeaders(request);
+                        
+                        // Find which server handled this request based on port
+                        Server* target_server = NULL;
+                        for (size_t s = 0; s < servers.count(); ++s) {
+                            if (servers.servers[s].listen == ntohs(server_addrs[s].sin_port)) {
+                                target_server = const_cast<Server*>(&servers.servers[s]);
+                                break;
+                            }
+                        }
+                        if (!target_server) {
+                            target_server = const_cast<Server*>(&servers.servers[0]);
+                        }
+                        
+                        /*
+                        HTTP Connection Header Summary
+                        ------------------------------
+                        HTTP/1.0:
+                        - Default: connection closes after each response.
+                        - Connection: close      -> Explicit close (same as default).
+                        - Connection: keep-alive -> Try persistent connection (non-standard extension).
+                        - Connection: blabla     -> Unknown token; connection closes.
+
+                        HTTP/1.1:
+                        - Default: connection stays open (persistent).
+                        - Connection: keep-alive -> Redundant; connection stays open.
+                        - Connection: close      -> Server must close after the response.
+                        - Connection: blabla     -> ignore → connection stays open.
+                        */
+                        bool client_wants_keepalive = true;
+                        if (headers.find("connection") != headers.end()) {
+                            std::string conn = headers["connection"];
+                            for (size_t i = 0; i < conn.size(); ++i) 
+                                conn[i] = tolower(conn[i]);
+                            if (conn == "close") 
+                                client_wants_keepalive = false;
+                        }
+                        if (version == "HTTP/1.0" && headers["connection"] != "Keep-Alive")
+                            client_wants_keepalive = false;
+                        // Log request
+                        std::ostringstream rlog;
+                        int server_num = getClientServer(fd);
+                        rlog << "[REQUEST #" << reqCount[fd] << "] Client " << fd;
+                        if (server_num > 0) {
+                            rlog << " (Server " << server_num << "): ";
+                        } else {
+                            rlog << ": ";
+                        }
+                        rlog << method << " " << path << " " << version
+                             << (client_wants_keepalive ? " (keep-alive)" : " (close)");
+                        Logger::request(rlog.str());
+                        // Routing: match location, enforce methods, resolve root and path
+                        const Location* loc = matchLocation(*target_server, path);
+                        std::string effectiveRoot;
+                        if (loc && !loc->root.empty()) 
+                        {
+                            effectiveRoot = loc->root;
+                        } else 
+                        {
+                            effectiveRoot = target_server->root;
+                        }
+                        std::string safePath = sanitizePath(path);
+                        if (!isMethodAllowed(loc, method)) 
+                        {
+                            std::string error = buildErrorWithCustom(*target_server, 405, "Method Not Allowed");
+                            send(fd, error.c_str(), error.size(), 0);
+                            client_wants_keepalive = false;
+                            toClose.push_back(fd);
+                            break;
+                        }
+                        std::string fullPath = effectiveRoot + safePath;
+                        if (isDirectory(fullPath)) 
+                        {
+                            if (!fullPath.empty() && fullPath[fullPath.size() - 1] != '/')
+                                fullPath += "/";
+                            fullPath += target_server->index;
+                        };
+                        std::string contentType = "text/html";
+                        size_t dot = fullPath.find_last_of('.');
+                        if (dot != std::string::npos) {
+                            std::string ext = fullPath.substr(dot);
+                            if (ext == ".css")
+                                contentType = "text/css";
+                            else if (ext == ".js")
+                                contentType = "application/javascript";
+                            else if (ext == ".json")
+                                contentType = "application/json";
+                            else if (ext == ".png")
+                                contentType = "image/png";
+                            else if (ext == ".jpg" || ext == ".jpeg")
+                                contentType = "image/jpeg";
+                            else if (ext == ".gif")
+                                contentType = "image/gif";
+                            else if (ext == ".ico")
+                                contentType = "image/x-icon";
+                        }
+
+                        std::string response;
+                        
+                        if (method == "GET") {
+                            std::ifstream f(fullPath.c_str(), std::ios::binary);
+                            if (f) {
+                                std::string body((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+                                response = "HTTP/1.1 200 OK\r\n";
+                                response += "Content-Type: " + contentType + "\r\n";
+                                response += "Content-Length: " + intToString((int)body.size()) + "\r\n";
+                                if (client_wants_keepalive)
+                                    response += "Connection: keep-alive\r\n";
+                                else
+                                    response += "Connection: close\r\n";
+                                response += "\r\n";
+                                response += body;
+                            } else {
+                                response = buildErrorWithCustom(*target_server, 404, "Not Found");
+                                client_wants_keepalive = false;
+                            }
+                        } 
+                        else if (method == "POST") {
+                            // Simple POST handler that creates/updates the file
+                            std::ofstream out(fullPath.c_str(), std::ios::binary);
+                            if (out) {
+                                // Get the request body (simplified - in real case, parse Content-Length and read body properly)
+                                size_t body_pos = request.find("\r\n\r\n") + 4;
+                                if (body_pos < request.length()) {
+                                    std::string body = request.substr(body_pos);
+                                    out << body;
+                                    response = "HTTP/1.1 201 Created\r\n";
+                                    response += "Content-Type: application/json\r\n";
+                                    response += "Content-Length: 0\r\n";
+                                    response += client_wants_keepalive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
+                                    response += "\r\n";
+                                } else {
+                                    response = buildErrorWithCustom(*target_server, 400, "Bad Request");
+                                    client_wants_keepalive = false;
+                                }
+                            } else {
+                                response = buildErrorWithCustom(*target_server, 500, "Internal Server Error");
+                                client_wants_keepalive = false;
+                            }
+                        } 
+                        else if (method == "DELETE") {
+                            if (std::remove(fullPath.c_str()) == 0) {
+                                response = "HTTP/1.1 200 OK\r\n";
+                                response += "Content-Type: application/json\r\n";
+                                response += "Content-Length: 0\r\n";
+                                response += client_wants_keepalive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
+                                response += "\r\n";
+                            } else {
+                                response = buildErrorWithCustom(*target_server, 404, "Not Found");
+                                client_wants_keepalive = false;
+                            }
+                        } else {
+                            response = buildErrorWithCustom(*target_server, 501, "Not Implemented");
+                        }
+                        send(fd, response.c_str(), response.size(), 0);
+                        if (!client_wants_keepalive) {
+                            toClose.push_back(fd);
+                            break;
+                        }
+                        
+                        if (reqCount[fd] >= 10) {
+                            toClose.push_back(fd);
+                            break;
+                        }
+                        recvBuf[fd].clear();
+                    }
+                } else if (n == 0) {
+                    toClose.push_back(fd);
+                    break;
+                } else {
+                    if (errno == EAGAIN) {
+                        break;
+                    }
+                    if (errno == EINTR) {
+                        continue;
+                    }
+                    perror("recv");
+                    toClose.push_back(fd);
+                    break;
+                }
+            }
+        }
+        
+        // Close marked clients
+        for (size_t i = 0; i < toClose.size(); ++i) {
+            int fd = toClose[i];
+            clients.erase(fd);
+            recvBuf.erase(fd);
+            reqCount.erase(fd);
+            removeClient(fd);
+            close(fd);
+        }
+    }
+    
+    // Cleanup
+    std::cout << "\n[SHUTDOWN] Closing server sockets..." << std::endl;
+    for (size_t i = 0; i < g_server_socks.size(); ++i) {
+        if (g_server_socks[i] != -1) {
+            close(g_server_socks[i]);
+        }
+    }
+    g_server_socks.clear();
+    
+    for (size_t i = 0; i < g_active_clients.size(); ++i) {
+        close(g_active_clients[i]);
+    }
+    std::cout << "[SHUTDOWN] Closed " << g_active_clients.size()
+              << " active connections" << std::endl;
+    
+    std::cout << "✅ All servers stopped gracefully" << std::endl;
     return EXIT_SUCCESS;
 }
