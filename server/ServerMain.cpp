@@ -4,7 +4,6 @@
 #include "../http/HttpUtils.hpp"
 #include "../utils/Utils.hpp"
 #include "../logging/Logger.hpp"
-
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
@@ -201,357 +200,23 @@ static std::string buildErrorWithCustom(const Server& server, int code, const st
     return resp.str();
 }
 
-int startServer(const Server &server) {
-    /*This tells the socket which address family (network type) you want to use.
-    AF_INET = IPv4 addresses
-    SOCK_STREAM : This tells the socket which communication type it will use. SOCK_STREAM = TCP
-    TCP means: connection-based, reliable (guarantees delivery and order),used for HTTP, HTTPS, FTP, SSH, etc.
-    The system knows protocol must be TCP, so we pass 0.
-    */
-    g_server_sock = socket(AF_INET, SOCK_STREAM, 0); 
-    if (g_server_sock < 0) {
-        perror("socket");
-        return EXIT_FAILURE;
-    }
-    int opt = 1;
-    //setsocket modifies the setting of the server socket before binding it to a port
-    //SO_REUSEADDR means : You can restart your server immediately without waiting for the port to free up.Why? Because the OS keeps the port in a "TIME_WAIT" state for 30–120 seconds.
-    //SOL_SOCKET : “Apply this option at the socket level”
-    setsockopt(g_server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-    sockaddr_in addr;
-    std::memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(server.listen);
-    if (!server.host.empty()) {
-        if (!parseIPv4(server.host, &addr.sin_addr)) {
-            // Fallback to any address if parsing fails
-            addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        }
-    } 
-    else {
-        addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    }
-    if (bind(g_server_sock, (sockaddr *)&addr, sizeof(addr)) < 0) 
-    {
-        perror("bind");
-        close(g_server_sock);
-        return EXIT_FAILURE;
-    }
-    if (listen(g_server_sock, 128) < 0) 
-    {
-        perror("listen");
-        close(g_server_sock);
-        return EXIT_FAILURE;
-    }
-    setNonBlocking(g_server_sock);
-    std::cout << "✅ Server listening on http://" << server.host << ":" << server.listen
-              << "\nPress Ctrl+C to stop the server\n==============================\n";
-
-    // Per-client buffers and request counters
-    std::map<int, std::string> recvBuf;
-    std::map<int, int> reqCount;
-    std::set<int> clients;
-
-    while (!g_shutdown) 
-    {
-        fd_set readfds;//fd_set is a data structure used by the select() system call to keep track of a group of file descriptors (FDs) that we want to monitor.
-        //Think of it like a list/collection of sockets that you tell Linux to “watch”.
-        //So fd_set = “a set of sockets to check”.
-        FD_ZERO(&readfds);// FD_ZERO initializes/clears the fd_set.Because each time before calling select(), you must prepare a fresh set of sockets to watch.
-        //If you don’t clear it, it may contain old data → undefined behavior.
-        int maxfd = g_server_sock;
-        FD_SET(g_server_sock, &readfds);//FD_SET = write a socket number on the board
-        for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it) 
-        {
-            FD_SET(*it, &readfds);
-            if (*it > maxfd) 
-                maxfd = *it;
-        }
-        timeval tv;
-        tv.tv_sec = 1;
-        tv.tv_usec = 0;
-        int ready = select(maxfd + 1, &readfds, NULL, NULL, &tv);//maxfd+1 because we need to tell how many file descriptors it should check and plus because form 0 to nfds - 1
-        if (ready < 0) 
-        {
-            //during selection if we press cntrl-C
-            if (errno == EINTR)
-            {
-                continue;
-            }
-            perror("select");
-            break;
-        }
-        // New connections
-        // when a server socket is ready to read yaany a new client is ready to connect
-        // if (FD_ISSET(3, &readfds)) { ... }  // is server socket ready? 3 yaany server-socket
-        /*
-        ✅ A new client is connecting
-        ❗ Not when a client sends data
-        ❗ Not when server wants to write
-        ✅ Only when a new TCP connection request arrives
-        */
-        if (FD_ISSET(g_server_sock, &readfds))
-        {
-            sockaddr_in client_addr;//Creates a structure to store the connecting client’s IP and port
-            socklen_t client_len = sizeof(client_addr);
-            for (;;) 
-            {
-                //why inifinte loop? Because the server accepts clients as many as possible until no more pending connections remain.
-                int client_sock = accept(g_server_sock, (sockaddr *)&client_addr, &client_len);
-                if (client_sock < 0) 
-                {
-                    if (errno == EAGAIN) //No more clients waiting to connect now.
-                    {
-                        break;
-                    }
-                    if (errno == EINTR) //Interrupt signal occurred (example: Ctrl+C or OS signal).Try again → continue;
-                    {
-                        continue;
-                    }
-                    perror("accept");
-                    break;
-                }
-                setNonBlocking(client_sock);//future recv() or send() do not block the server remains responsive(saree3 l estijaba)
-                clients.insert(client_sock);
-                recvBuf[client_sock] = std::string();
-                reqCount[client_sock] = 0;
-                addClient(client_sock, 1);
-            }
-        }
-        // Handle readable clients
-        std::vector<int> toClose;
-        for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it) 
-        {
-            int fd = *it;
-            //when there is a connection for a client but no request yet
-            if (!FD_ISSET(fd, &readfds))
-            {
-                continue;
-            }
-            char buffer[8192];
-            for (;;) 
-            {
-                ssize_t n = recv(fd, buffer, sizeof(buffer), 0); // 0 in the last argument to make the recv works normally wohtout options
-                if (n > 0) 
-                {
-                    recvBuf[fd].append(buffer, n);
-                    if (isRequestComplete(recvBuf[fd].c_str(), (int)recvBuf[fd].size())) 
-                    {
-                        // Parse request line
-                        std::string request = recvBuf[fd];
-                        reqCount[fd]++;
-                        std::istringstream iss(request);
-                        std::string method, path, version;
-                        iss >> method >> path >> version;
-                        if (method.empty() || path.empty() || version.empty()) {
-                            std::string error = buildErrorResponse(400, "Invalid request");
-                            send(fd, error.c_str(), error.size(), 0);
-                            toClose.push_back(fd);
-                            break;
-                        }
-                        std::map<std::string, std::string> headers = parseHeaders(request);
-                        /*
-                        HTTP Connection Header Summary
-                        ------------------------------
-                        HTTP/1.0:
-                        - Default: connection closes after each response.
-                        - Connection: close      -> Explicit close (same as default).
-                        - Connection: keep-alive -> Try persistent connection (non-standard extension).
-                        - Connection: blabla     -> Unknown token; connection closes.
-
-                        HTTP/1.1:
-                        - Default: connection stays open (persistent).
-                        - Connection: keep-alive -> Redundant; connection stays open.
-                        - Connection: close      -> Server must close after the response.
-                        - Connection: blabla     -> ignore → connection stays open.
-                        */
-                        bool client_wants_keepalive = true;
-                        if (headers.find("connection") != headers.end()) {
-                            std::string conn = headers["connection"];
-                            for (size_t i = 0; i < conn.size(); ++i) 
-                                conn[i] = tolower(conn[i]);
-                            if (conn == "close") 
-                                client_wants_keepalive = false;
-                        }
-                        if (version == "HTTP/1.0" && headers["connection"] != "Keep-Alive")
-                            client_wants_keepalive = false;
-                        // Log request
-                        std::ostringstream rlog;
-                        rlog << "[REQUEST #" << reqCount[fd] << "] Client " << fd << " (Server 1): "
-                             << method << " " << path << " " << version
-                             << (client_wants_keepalive ? " (keep-alive)" : " (close)");
-                        Logger::request(rlog.str());
-                        // Routing: match location, enforce methods, resolve root and path
-                        const Location* loc = matchLocation(server, path);
-                        std::string effectiveRoot;
-                        if (loc && !loc->root.empty()) 
-                        {
-                            effectiveRoot = loc->root;
-                        } else 
-                        {
-                            effectiveRoot = server.root;
-                        }
-                        std::string safePath = sanitizePath(path);
-                        if (!isMethodAllowed(loc, method)) 
-                        {
-                            std::string error = buildErrorWithCustom(server, 405, "Method Not Allowed");
-                            send(fd, error.c_str(), error.size(), 0);
-                            client_wants_keepalive = false;
-                            toClose.push_back(fd);
-                            break;
-                        }
-                        // Build response (GET/HEAD minimal) with per-location root
-                        std::string full_path = joinPaths(effectiveRoot, safePath);
-                        if (isDirectory(full_path)) 
-                        {
-                            if (!full_path.empty() && full_path[full_path.size() - 1] != '/')
-                                full_path += "/";
-                            full_path += server.index;
-                        };
-                        std::string contentType = "text/html";
-                        size_t dot = full_path.find_last_of('.');
-                        if (dot != std::string::npos) {
-                            std::string ext = full_path.substr(dot);
-                            if (ext == ".css")
-                                contentType = "text/css";
-                            else if (ext == ".js")
-                                contentType = "application/javascript";
-                            else if (ext == ".json")
-                                contentType = "application/json";
-                            else if (ext == ".png")
-                                contentType = "image/png";
-                            else if (ext == ".jpg" || ext == ".jpeg")
-                                contentType = "image/jpeg";
-                            else if (ext == ".gif")
-                                contentType = "image/gif";
-                            else if (ext == ".ico")
-                                contentType = "image/x-icon";
-                        }
-
-                        std::string response;
-                        if (method == "GET") {
-                            std::ifstream f(full_path.c_str(), std::ios::binary);
-                            if (f) {
-                                std::string body((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-                                response = "HTTP/1.1 200 OK\r\n";
-                                response += "Content-Type: " + contentType + "\r\n";
-                                response += "Content-Length: " + intToString((int)body.size()) + "\r\n";
-                                if (client_wants_keepalive)
-                                    response += "Connection: keep-alive\r\n";
-                                else
-                                    response += "Connection: close\r\n";
-                                response += "\r\n";
-                                response += body;
-                            } else {
-                                response = buildErrorWithCustom(server, 404, "Not Found");
-                                client_wants_keepalive = false;
-                            }
-                        } 
-                        else if (method == "POST") {
-                            // Simple POST handler that creates/updates the file
-                            std::ofstream out(full_path.c_str(), std::ios::binary);
-                            if (out) {
-                                // Get the request body (simplified - in real case, parse Content-Length and read body properly)
-                                size_t body_pos = request.find("\r\n\r\n") + 4;
-                                if (body_pos < request.length()) {
-                                    std::string body = request.substr(body_pos);
-                                    out << body;
-                                    response = "HTTP/1.1 201 Created\r\n";
-                                    response += "Content-Type: application/json\r\n";
-                                    response += "Content-Length: 0\r\n";
-                                    response += client_wants_keepalive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
-                                    response += "\r\n";
-                                } 
-                                else {
-                                    response = buildErrorWithCustom(server, 400, "Bad Request: No request body");
-                                    client_wants_keepalive = false;
-                                }
-                            } 
-                            else {
-                                response = buildErrorWithCustom(server, 500, "Internal Server Error: Could not create file");
-                                client_wants_keepalive = false;
-                            }
-                        } 
-                        else if (method == "DELETE") {
-                            if (std::remove(full_path.c_str()) == 0) {
-                                response = "HTTP/1.1 204 No Content\r\n";
-                                response += client_wants_keepalive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
-                                response += "\r\n";
-                            } 
-                            else {
-                                response = buildErrorWithCustom(server, 404, "Not Found or could not delete");
-                                client_wants_keepalive = false;
-                            }
-                        }
-                        // else {
-                        //     response = buildErrorResponse(501, "Not Implemented");
-                        //     client_wants_keepalive = false;
-                        // }
-                        // Send response (best-effort single send for now)
-                        (void)send(fd, response.c_str(), response.size(), 0);
-
-                        // Reset buffer for next request or close
-                        recvBuf[fd].clear();
-                        if (!client_wants_keepalive) {
-                            toClose.push_back(fd);
-                        }
-                        break; // process next ready fd
-                    }
-                }
-                //n will be 0 if the client closed the terminal => close the connection 
-                else if (n == 0) 
-                {
-                    // client closed
-                    toClose.push_back(fd);
-                    break;
-                }
-                //n will be -1 if the client is not writing anything in the terminal after entering the for (;;) 
-                else 
-                {
-                    if (errno == EAGAIN || errno == EWOULDBLOCK) 
-                        break;
-                    toClose.push_back(fd);
-                    break;
-                }
-            }
-        }
-
-        for (size_t i = 0; i < toClose.size(); ++i) {
-            int fd = toClose[i];
-            if (clients.erase(fd)) {
-                close(fd);
-                removeClient(fd);
-                recvBuf.erase(fd);
-                reqCount.erase(fd);
-            }
-        }
-    }
-
-    std::cout << "\n[SHUTDOWN] Closing server socket..." << std::endl;
-    if (g_server_sock != -1)
-        close(g_server_sock);
-
-    for (size_t i = 0; i < g_active_clients.size(); ++i)
-        close(g_active_clients[i]);
-    std::cout << "[SHUTDOWN] Closed " << g_active_clients.size()
-              << " active connections" << std::endl;
-
-    std::cout << "✅ Server stopped gracefully" << std::endl;
-    return EXIT_SUCCESS;
-}
-
 int startServers(const Servers &servers) {
+    //checking if there is servers in the vector servers
     if (servers.empty()) {
         std::cerr << "Error: No servers to start" << std::endl;
         return EXIT_FAILURE;
     }
-    // Clear any existing server sockets
-    g_server_socks.clear();
     // Create and bind all server sockets
     std::vector<sockaddr_in> server_addrs;
-    for (size_t i = 0; i < servers.count(); ++i) {
+    for (size_t i = 0; i < servers.count(); ++i) 
+    {
         const Server& server = servers.servers[i];
-        
+        /*This tells the socket which address family (network type) you want to use.
+        AF_INET = IPv4 addresses
+        SOCK_STREAM : This tells the socket which communication type it will use. SOCK_STREAM = TCP
+        TCP means: connection-based, reliable (guarantees delivery and order),used for HTTP, HTTPS, FTP, SSH, etc.
+        The system knows protocol must be TCP, so we pass 0.
+        */
         int server_sock = socket(AF_INET, SOCK_STREAM, 0);
         if (server_sock < 0) {
             perror("socket");
@@ -563,20 +228,23 @@ int startServers(const Servers &servers) {
         }
         
         int opt = 1;
+        //setsocket modifies the setting of the server socket before binding it to a port
+        //SO_REUSEADDR means : You can restart your server immediately without waiting for the port to free up.Why? Because the OS keeps the port in a "TIME_WAIT" state for 30–120 seconds.
+        //SOL_SOCKET : “Apply this option at the socket level”
         setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-        
+
         sockaddr_in addr;
         std::memset(&addr, 0, sizeof(addr));
         addr.sin_family = AF_INET;
         addr.sin_port = htons(server.listen);
         
-        if (!server.host.empty()) {
-            if (!parseIPv4(server.host, &addr.sin_addr)) {
+        if (!server.host.empty()) 
+        {
+            if (!parseIPv4(server.host, &addr.sin_addr))
                 addr.sin_addr.s_addr = htonl(INADDR_ANY);
-            }
-        } else {
-            addr.sin_addr.s_addr = htonl(INADDR_ANY);
         }
+        else
+            addr.sin_addr.s_addr = htonl(INADDR_ANY);
         
         if (bind(server_sock, (sockaddr *)&addr, sizeof(addr)) < 0) {
             perror("bind");
@@ -619,8 +287,11 @@ int startServers(const Servers &servers) {
     std::set<int> clients;
     
     while (!g_shutdown) {
-        fd_set readfds;
-        FD_ZERO(&readfds);
+        fd_set readfds;//fd_set is a data structure used by the select() system call to keep track of a group of file descriptors (FDs) that we want to monitor.
+        //Think of it like a list/collection of sockets that you tell Linux to “watch”.
+        //So fd_set = “a set of sockets to check”.
+        FD_ZERO(&readfds);// FD_ZERO initializes/clears the fd_set.Because each time before calling select(), you must prepare a fresh set of sockets to watch.
+        //If you don’t clear it, it may contain old data → undefined behavior.
         
         int maxfd = -1;
         
@@ -662,24 +333,33 @@ int startServers(const Servers &servers) {
         
         // Check for new connections on any server socket
         for (size_t i = 0; i < g_server_socks.size(); ++i) {
+            // New connections
+            // when a server socket is ready to read yaany a new client is ready to connect
+            // if (FD_ISSET(3, &readfds)) { ... }  // is server socket ready? 3 yaany server-socket
+            /*
+            ✅ A new client is connecting
+            ❗ Not when a client sends data
+            ❗ Not when server wants to write
+            ✅ Only when a new TCP connection request arrives
+            */
             if (g_server_socks[i] != -1 && FD_ISSET(g_server_socks[i], &readfds)) {
-                sockaddr_in client_addr;
+                sockaddr_in client_addr;//Creates a structure to store the connecting client’s IP and port
                 socklen_t client_len = sizeof(client_addr);
                 
-                for (;;) {
+                for (;;) 
+                {
+                    //why inifinte loop? Because the server accepts clients as many as possible until no more pending connections remain.
                     int client_sock = accept(g_server_socks[i], (sockaddr *)&client_addr, &client_len);
                     if (client_sock < 0) {
-                        if (errno == EAGAIN) {
+                        if (errno == EAGAIN)//No more clients waiting to connect now. 
                             break;
-                        }
-                        if (errno == EINTR) {
+                        if (errno == EINTR)//Interrupt signal occurred (example: Ctrl+C or OS signal).Try again → continue;
                             continue;
-                        }
                         perror("accept");
                         break;
                     }
                     
-                    setNonBlocking(client_sock);
+                    setNonBlocking(client_sock);//future recv() or send() do not block the server remains responsive(saree3 l estijaba)
                     clients.insert(client_sock);
                     recvBuf[client_sock] = std::string();
                     reqCount[client_sock] = 0;
@@ -692,13 +372,14 @@ int startServers(const Servers &servers) {
         std::vector<int> toClose;
         for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it) {
             int fd = *it;
+            //when there is a connection for a client but no request yet
             if (!FD_ISSET(fd, &readfds)) {
                 continue;
             }
             
             char buffer[8192];
             for (;;) {
-                ssize_t n = recv(fd, buffer, sizeof(buffer), 0);
+                ssize_t n = recv(fd, buffer, sizeof(buffer), 0); // 0 in the last argument to make the recv works normally wohtout options
                 if (n > 0) {
                     recvBuf[fd].append(buffer, n);
                     if (isRequestComplete(recvBuf[fd].c_str(), (int)recvBuf[fd].size())) {
@@ -882,16 +563,18 @@ int startServers(const Servers &servers) {
                         }
                         recvBuf[fd].clear();
                     }
-                } else if (n == 0) {
+                }
+                //n will be 0 if the client closed the terminal => close the connection  
+                else if (n == 0) {
                     toClose.push_back(fd);
                     break;
-                } else {
-                    if (errno == EAGAIN) {
+                }
+                //n will be -1 if the client is not writing anything in the terminal after entering the for (;;) 
+                else {
+                    if (errno == EAGAIN)
                         break;
-                    }
-                    if (errno == EINTR) {
+                    if (errno == EINTR)
                         continue;
-                    }
                     perror("recv");
                     toClose.push_back(fd);
                     break;

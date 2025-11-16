@@ -20,9 +20,4 @@ void signalHandler(int signum) {
         }
     }
     
-    // Backward compatibility
-    if (g_server_sock != -1) {
-        close(g_server_sock);
-        g_server_sock = -1;
-    }
 }
