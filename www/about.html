@@ -1,34 +1,79 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Webserv • About</title>
-    <link rel="stylesheet" href="/assets/css/styles.css" />
-  </head>
-  <body>
-    <header class="header">
-      <div class="container nav">
-        <a class="brand" href="/"><span class="dot"></span><span>Webserv</span></a>
-        <nav style="margin-left:auto;display:flex;gap:8px;align-items:center">
-          <a href="/">Home</a>
-          <a class="active" href="/about.html">About</a>
-          <a href="/services.html">Services</a>
-          <a href="/gallery.html">Gallery</a>
-          <a href="/contact.html">Contact</a>
-        </nav>
-      </div>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About - WebServ</title>
+    <link rel="stylesheet" href="/assets/css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <nav>
+                <a href="/" class="logo">WebServ</a>
+                <div class="nav-links">
+                    <a href="/">Home</a>
+                    <a href="/about.html" class="active">About</a>
+                    <a href="/services.html">Services</a>
+                    <a href="/contact.html">Contact</a>
+                    <a href="/cgi-bin/script.py">CGI Test</a>
+                </div>
+            </nav>
+        </div>
     </header>
-    <main class="main">
-      <div class="container">
-        <section class="card"><div class="body">
-          <span class="badge">About</span>
-          <h1>About This Project</h1>
-          <p style="color:var(--muted)">This website is served by a custom C++ web server. It demonstrates routing, static file serving, and simple forms.</p>
-        </div></section>
-      </div>
+
+    <main>
+        <div class="container">
+            <section class="hero animate-fade-in" style="padding-bottom: 2rem;">
+                <h1>About The Project</h1>
+                <p>WebServ is a comprehensive HTTP server implementation written in C++ 98, designed to handle multiple clients simultaneously without blocking.</p>
+            </section>
+
+            <div class="grid grid-2">
+                <div class="card">
+                    <h3>Our Mission</h3>
+                    <p>To understand the intricacies of the HTTP protocol and network programming by building a server from scratch. We aim to provide a lightweight, compliant, and educational web server.</p>
+                </div>
+                <div class="card">
+                    <h3>Technology Stack</h3>
+                    <ul style="color: var(--text-muted);">
+                        <li>• C++ 98 Standard</li>
+                        <li>• Non-blocking I/O (poll/epoll/kqueue)</li>
+                        <li>• HTTP/1.1 Protocol</li>
+                        <li>• CGI (Common Gateway Interface)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="mt-4 text-center">
+                <h2>The Team</h2>
+                <p>Dedicated developers from 42 School.</p>
+                <div class="grid grid-3 mt-4">
+                    <div class="card">
+                        <div style="width: 80px; height: 80px; background: var(--primary); border-radius: 50%; margin: 0 auto 1rem; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.5rem;">M</div>
+                        <h4>Mostafa</h4>
+                        <p>Lead Developer</p>
+                    </div>
+                    <div class="card">
+                        <div style="width: 80px; height: 80px; background: var(--secondary); border-radius: 50%; margin: 0 auto 1rem; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.5rem;">U</div>
+                        <h4>User</h4>
+                        <p>Backend Engineer</p>
+                    </div>
+                    <div class="card">
+                        <div style="width: 80px; height: 80px; background: var(--accent); border-radius: 50%; margin: 0 auto 1rem; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.5rem;">A</div>
+                        <h4>AI</h4>
+                        <p>Assistant</p>
+                    </div>
+                </div>
+            </div>
+        </div>
     </main>
-    <footer class="footer"><div class="container">© <span id="year"></span> Webserv</div></footer>
-    <script>document.getElementById('year').textContent = (new Date).getFullYear();</script>
-  </body>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 WebServ Project. Built with ❤️ by 42 Students.</p>
+        </div>
+    </footer>
+</body>
 </html>

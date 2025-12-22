@@ -343,6 +343,20 @@ bool ConfigValidator::validateDirective(const std::string &line, int lineNum, bo
             return false;
         }
     }
+    else if (directive == "host")
+    {
+        if (inLocation)
+        {
+            printError("'host' directive not allowed in location block", lineNum);
+            return false;
+        }
+        std::string value;
+        if (!(iss >> value))
+        {
+            printError("'host' directive missing value", lineNum);
+            return false;
+        }
+    }
     else if (directive == "max_size")
     {
         std::string value;
@@ -462,6 +476,60 @@ bool ConfigValidator::validateDirective(const std::string &line, int lineNum, bo
             printError("'cgi_extension' directive missing extension", lineNum);
             return false;
         }
+    }
+    else if (directive == "autoindex")
+    {
+        if (!inLocation)
+        {
+            printError("'autoindex' directive only allowed in location block", lineNum);
+            return false;
+        }
+        std::string val;
+        if (!(iss >> val))
+        {
+            printError("'autoindex' directive missing value (on/off)", lineNum);
+            return false;
+        }
+        if (!val.empty() && val[val.size() - 1] == ';')
+            val = val.substr(0, val.size() - 1);
+        if (val != "on" && val != "off")
+        {
+            printError("Invalid value for 'autoindex' (expected on/off)", lineNum);
+            return false;
+        }
+    }
+    else if (directive == "upload_store")
+    {
+        if (!inLocation)
+        {
+            printError("'upload_store' directive only allowed in location block", lineNum);
+            return false;
+        }
+        std::string path;
+        if (!(iss >> path))
+        {
+            printError("'upload_store' directive missing path", lineNum);
+            return false;
+        }
+        if (!path.empty() && path[path.size() - 1] == ';')
+            path = path.substr(0, path.size() - 1);
+    }
+    else if (directive == "redirect")
+    {
+        if (!inLocation)
+        {
+            printError("'redirect' directive only allowed in location block", lineNum);
+            return false;
+        }
+        int code;
+        std::string url;
+        if (!(iss >> code >> url))
+        {
+            printError("'redirect' directive requires status code and URL", lineNum);
+            return false;
+        }
+        if (!url.empty() && url[url.size() - 1] == ';')
+            url = url.substr(0, url.size() - 1);
     }
     else if (directive != "location" && directive != "server")
     {

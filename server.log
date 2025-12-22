@@ -1,0 +1,44 @@
+=== WebServer Starting ===
+Debug mode: ON (colored logs enabled)
+Config file: webserv.conf
+Configuration parsed successfully!
+
+=== Server Configurations ===
+Server 1:
+  Host:        127.0.0.1
+  Port:        8080
+  Server Name: localhost
+  Root:        ./www
+  Index:       index.html
+  Max Size:    10m
+==============================
+
+✅ Server 1 listening on http://127.0.0.1:8080
+Press Ctrl+C to stop the servers
+==============================
+[36m[INFO] Client connected (fd=4) on Server 1. Active clients: 1[0m
+[35m[REQUEST] [REQUEST #1] Client 4 (Server 1): GET /cgi-bin/script.py HTTP/1.1 (keep-alive)[0m
+/mnt/c/Users/user/OneDrive/Documents/GitHub/webserve/./www/cgi-bin/script.py:2: DeprecationWarning: 'cgi' is deprecated and slated for removal in Python 3.13
+  import cgi
+/mnt/c/Users/user/OneDrive/Documents/GitHub/webserve/./www/cgi-bin/script.py:3: DeprecationWarning: 'cgitb' is deprecated and slated for removal in Python 3.13
+  import cgitb
+[36m[INFO] Client connected (fd=5) on Server 1. Active clients: 2[0m
+[36m[INFO] Client connected (fd=6) on Server 1. Active clients: 3[0m
+[35m[REQUEST] [REQUEST #1] Client 5 (Server 1): GET / HTTP/1.1 (keep-alive)[0m
+[35m[REQUEST] [REQUEST #2] Client 5 (Server 1): GET /assets/css/styles.css HTTP/1.1 (keep-alive)[0m
+[36m[INFO] Client connected (fd=8) on Server 1. Active clients: 4[0m
+[35m[REQUEST] [REQUEST #3] Client 5 (Server 1): GET /favicon.ico HTTP/1.1 (keep-alive)[0m
+[36m[INFO] Client disconnected (fd=5) from Server 1. Active clients: 3[0m
+[35m[REQUEST] [REQUEST #1] Client 6 (Server 1): GET /about.html HTTP/1.1 (keep-alive)[0m
+[35m[REQUEST] [REQUEST #2] Client 6 (Server 1): GET /assets/css/styles.css HTTP/1.1 (keep-alive)[0m
+[35m[REQUEST] [REQUEST #3] Client 6 (Server 1): GET /services.html HTTP/1.1 (keep-alive)[0m
+[35m[REQUEST] [REQUEST #4] Client 6 (Server 1): GET /assets/css/styles.css HTTP/1.1 (keep-alive)[0m
+[35m[REQUEST] [REQUEST #5] Client 6 (Server 1): GET /contact.html HTTP/1.1 (keep-alive)[0m
+[35m[REQUEST] [REQUEST #6] Client 6 (Server 1): GET /assets/css/styles.css HTTP/1.1 (keep-alive)[0m
+[35m[REQUEST] [REQUEST #7] Client 6 (Server 1): GET /cgi-bin/script.py HTTP/1.1 (keep-alive)[0m
+/mnt/c/Users/user/OneDrive/Documents/GitHub/webserve/./www/cgi-bin/script.py:2: DeprecationWarning: 'cgi' is deprecated and slated for removal in Python 3.13
+  import cgi
+/mnt/c/Users/user/OneDrive/Documents/GitHub/webserve/./www/cgi-bin/script.py:3: DeprecationWarning: 'cgitb' is deprecated and slated for removal in Python 3.13
+  import cgitb
+[36m[INFO] Client disconnected (fd=6) from Server 1. Active clients: 2[0m
+[36m[INFO] Client disconnected (fd=8) from Server 1. Active clients: 1[0m

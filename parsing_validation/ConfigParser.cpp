@@ -138,6 +138,16 @@ Server ConfigParser::parseServer()
                 exit(EXIT_FAILURE);
             }
         }
+        else if (line.find("host") == 0)
+        {
+            std::string val = getValue(line);
+            if (val.empty())
+            {
+                std::cerr << "Error: Missing value for 'host' at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            server.host = val;
+        }
         else if (line.find("max_size") == 0)
         {
             std::string val = getValue(line);
@@ -224,10 +234,10 @@ Server ConfigParser::parseServer()
             {
                 lineNum++;
                 line = trim(cp_removeComments(line));
-                
+
                 if (line.empty())
                     continue;
-                
+
                 if (line == "{" || line.find("{") == 0)
                 {
                     foundBrace = true;
@@ -239,7 +249,7 @@ Server ConfigParser::parseServer()
                     exit(EXIT_FAILURE);
                 }
             }
-            
+
             if (!foundBrace)
             {
                 std::cerr << "Error: Expected '{' after 'location' but reached end of file" << std::endl;
@@ -269,6 +279,60 @@ Server ConfigParser::parseServer()
                 exit(EXIT_FAILURE);
             }
             currentLoc.root = val;
+        }
+        else if (inLocation && line.find("index") == 0)
+        {
+            std::string val = getValue(line);
+            if (val.empty())
+            {
+                std::cerr << "Error: Missing value for 'index' in location block at line "
+                          << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            currentLoc.index = val;
+        }
+        else if (inLocation && line.find("autoindex") == 0)
+        {
+            std::string val = getValue(line);
+            if (val == "on")
+                currentLoc.autoindex = true;
+            else if (val == "off")
+                currentLoc.autoindex = false;
+            else
+            {
+                std::cerr << "Error: Invalid value for 'autoindex' at line " << lineNum
+                          << ". Expected 'on' or 'off'." << std::endl;
+                exit(EXIT_FAILURE);
+            }
+        }
+        else if (inLocation && line.find("upload_store") == 0)
+        {
+            std::string val = getValue(line);
+            if (val.empty())
+            {
+                std::cerr << "Error: Missing value for 'upload_store' at line "
+                          << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            currentLoc.upload_store = val;
+        }
+        else if (inLocation && line.find("return") == 0)
+        {
+            std::istringstream iss(line);
+            std::string key;
+            int code;
+            std::string url;
+            iss >> key >> code >> url;
+
+            if (url.empty())
+            {
+                std::cerr << "Error: Invalid return directive at line " << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            if (!url.empty() && url[url.size() - 1] == ';')
+                url = url.substr(0, url.size() - 1);
+
+            currentLoc.redirect = std::make_pair(code, url);
         }
         else if (inLocation && line.find("cgi_extension") == 0)
         {

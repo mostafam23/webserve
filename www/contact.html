@@ -1,117 +1,68 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Webserv • Contact</title>
-    <link rel="stylesheet" href="/assets/css/styles.css" />
-  </head>
-  <body>
-    <header class="header">
-      <div class="container nav">
-        <a class="brand" href="/"><span class="dot"></span><span>Webserv</span></a>
-        <nav style="margin-left:auto;display:flex;gap:8px;align-items:center">
-          <a href="/">Home</a>
-          <a href="/about.html">About</a>
-          <a href="/services.html">Services</a>
-          <a href="/gallery.html">Gallery</a>
-          <a class="active" href="/contact.html">Contact</a>
-        </nav>
-      </div>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contact - WebServ</title>
+    <link rel="stylesheet" href="/assets/css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <nav>
+                <a href="/" class="logo">WebServ</a>
+                <div class="nav-links">
+                    <a href="/">Home</a>
+                    <a href="/about.html">About</a>
+                    <a href="/services.html">Services</a>
+                    <a href="/contact.html" class="active">Contact</a>
+                    <a href="/cgi-bin/script.py">CGI Test</a>
+                </div>
+            </nav>
+        </div>
     </header>
-    <main class="main">
-      <div class="container">
-        <section class="card">
-          <div class="body">
-            <h1>HTTP Method Testing</h1>
-            <p style="color:var(--muted)">Test the server's HTTP method handling</p>
-            
-            <!-- File Upload Form (POST) -->
-            <div style="margin-bottom: 2rem;">
-              <h3>1. Test File Upload (POST)</h3>
-              <form action="/test.txt" method="POST" onsubmit="event.preventDefault(); handleFormSubmit(this);">
-                <input type="text" name="file_content" placeholder="Enter text to save in test.txt" required style="width: 100%; margin-bottom: 1rem;" />
-                <button class="btn" type="submit">Save to File (POST)</button>
-              </form>
+
+    <main>
+        <div class="container">
+            <div class="grid grid-2" style="align-items: start;">
+                <div class="animate-fade-in">
+                    <h1>Get in Touch</h1>
+                    <p>Have questions about WebServ? Want to contribute? Send us a message!</p>
+                    
+                    <div class="card mt-4">
+                        <h3>Contact Info</h3>
+                        <p><strong>Email:</strong> contact@webserv.42</p>
+                        <p><strong>Location:</strong> 42 School, Beirut</p>
+                        <p><strong>GitHub:</strong> github.com/mostafam23/webserve</p>
+                    </div>
+                </div>
+
+                <div class="card animate-fade-in" style="animation-delay: 0.2s;">
+                    <form action="/cgi-bin/script.py" method="POST">
+                        <div class="form-group">
+                            <label for="name">Name</label>
+                            <input type="text" id="name" name="name" placeholder="Your Name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="email">Email</label>
+                            <input type="email" id="email" name="email" placeholder="your@email.com" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="message">Message</label>
+                            <textarea id="message" name="message" rows="5" placeholder="How can we help?" required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%;">Send Message</button>
+                    </form>
+                </div>
             </div>
-
-            <!-- File Deletion (DELETE) -->
-            <div style="margin-bottom: 2rem;">
-              <h3>2. Test File Deletion</h3>
-              <div style="display: flex; align-items: center;">
-                <button class="btn" onclick="deleteFile()">Delete test.txt (DELETE)</button>
-                <span id="deleteStatus" style="margin-left: 1rem; color: var(--primary);"></span>
-              </div>
-            </div>
-
-            <!-- View File Content (GET) -->
-            <div>
-              <h3>3. View File Content</h3>
-              <button class="btn" onclick="viewFile()">View test.txt (GET)</button>
-              <div style="margin-top: 1rem; background: #f5f5f5; color: black; padding: 1rem; border-radius: 4px; min-height: 50px;">
-                <pre id="fileContent" style="margin: 0; white-space: pre-wrap;">Click the button above to view file content</pre>
-              </div>
-            </div>
-
-            <!-- Hidden form for file uploads -->
-            <form id="uploadForm" style="display: none;"></form>
-          </div>
-          
-          <script>
-            async function handleFormSubmit(form) {
-              const formData = new FormData(form);
-              try {
-                const response = await fetch(form.action, {
-                  method: 'POST',
-                  body: formData.get('file_content'),
-                  headers: {
-                    'Content-Type': 'text/plain'
-                  }
-                });
-                alert(`File saved! Status: ${response.status}`);
-                viewFile(); // Refresh file content
-              } catch (err) {
-                alert('Error: ' + err.message);
-              }
-            }
-
-            async function deleteFile() {
-              const statusEl = document.getElementById('deleteStatus');
-              try {
-                const response = await fetch('/test.txt', { method: 'DELETE' });
-                if (response.status === 204) {
-                  statusEl.textContent = '✅ File deleted successfully!';
-                  document.getElementById('fileContent').textContent = 'File has been deleted.';
-                } else {
-                  statusEl.textContent = `❌ Error: ${response.status} ${response.statusText}`;
-                }
-              } catch (err) {
-                statusEl.textContent = '❌ Error: ' + err.message;
-              }
-            }
-
-            async function viewFile() {
-              const contentEl = document.getElementById('fileContent');
-              try {
-                const response = await fetch('/test.txt');
-                if (response.ok) {
-                  const content = await response.text();
-                  contentEl.textContent = content || '(File is empty)';
-                } else {
-                  contentEl.textContent = `Error: ${response.status} ${response.statusText}`;
-                }
-              } catch (err) {
-                contentEl.textContent = 'Error: ' + err.message;
-              }
-            }
-
-            // Load file content when page loads
-            document.addEventListener('DOMContentLoaded', viewFile);
-          </script>
-        </div></section>
-      </div>
+        </div>
     </main>
-    <footer class="footer"><div class="container">© <span id="year"></span> Webserv</div></footer>
-    <script>document.getElementById('year').textContent = (new Date).getFullYear();</script>
-  </body>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 WebServ Project. Built with ❤️ by 42 Students.</p>
+        </div>
+    </footer>
+</body>
 </html>

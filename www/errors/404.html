@@ -1,9 +1,61 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>404 Not Found</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 Not Found - WebServ</title>
+    <link rel="stylesheet" href="/assets/css/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        .error-page {
+            min-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        .error-code {
+            font-size: 8rem;
+            font-weight: 800;
+            background: linear-gradient(to right, var(--danger), var(--accent));
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            line-height: 1;
+            margin-bottom: 1rem;
+        }
+    </style>
 </head>
 <body>
-    <h1>Error 404: Page Not Found</h1>
+    <header>
+        <div class="container">
+            <nav>
+                <a href="/" class="logo">WebServ</a>
+                <div class="nav-links">
+                    <a href="/">Home</a>
+                    <a href="/about.html">About</a>
+                    <a href="/contact.html">Contact</a>
+                </div>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <div class="container">
+            <div class="error-page animate-fade-in">
+                <div class="error-code">404</div>
+                <h2>Page Not Found</h2>
+                <p>The page you are looking for might have been removed, had its name changed, or is temporarily unavailable.</p>
+                <a href="/" class="btn btn-primary">Go Back Home</a>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 WebServ Project. Built with ❤️ by 42 Students.</p>
+        </div>
+    </footer>
 </body>
 </html>

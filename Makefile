@@ -14,6 +14,7 @@ SRCS = main.cpp \
        http/HttpUtils.cpp \
        utils/Utils.cpp \
        server/ServerMain.cpp \
+       server/CgiHandler.cpp \
        app/App.cpp \
        app/ArgValidation.cpp
 
