@@ -27,38 +27,71 @@
         <div class="container">
             <section class="hero animate-fade-in" style="padding-bottom: 2rem;">
                 <h1>Our Services</h1>
-                <p>What WebServ can do for you.</p>
+                <p>Explore how WebServ handles HTTP methods, CGI execution, and file uploads.</p>
             </section>
 
-            <div class="grid grid-3">
+            <section class="grid grid-2">
+                <!-- GET (user-provided path) -->
                 <div class="card">
-                    <h3 style="color: var(--primary);">Static Hosting</h3>
-                    <p>Serve HTML, CSS, JS, and images with blazing speed. Perfect for portfolios, documentation, and landing pages.</p>
-                    <a href="/about.html" class="btn btn-outline" style="width: 100%; margin-top: 1rem;">Learn More</a>
+                    <h3 style="color: var(--primary);">GET Requests</h3>
+                    <p>Enter a URL path and let WebServ perform a GET request to that resource.</p>
+                    <form id="get-form" style="margin-top: 1rem;">
+                        <input type="text" id="get-path" placeholder="e.g. /42.html or /about.html" required
+                               style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;">
+                        <button type="submit" class="btn btn-outline" style="width: 100%;">
+                            Send GET Request
+                        </button>
+                    </form>
                 </div>
-                <div class="card">
-                    <h3 style="color: var(--secondary);">File Uploads</h3>
-                    <p>Securely upload files to the server using standard HTTP POST requests. Supports multipart/form-data.</p>
-                    <a href="/upload.html" class="btn btn-outline" style="width: 100%; margin-top: 1rem;">Try Upload</a>
-                </div>
+
+                <!-- CGI (user-provided script path) -->
                 <div class="card">
                     <h3 style="color: var(--accent);">CGI Execution</h3>
-                    <p>Run dynamic scripts on the fly. Compatible with Python, PHP, and any other CGI-compliant language.</p>
-                    <a href="/cgi-bin/script.py" class="btn btn-outline" style="width: 100%; margin-top: 1rem;">Test CGI</a>
+                    <p>Enter the path of a CGI script and let WebServ execute it.</p>
+                    <form id="cgi-form" style="margin-top: 1rem;">
+                        <input type="text" id="cgi-path" placeholder="e.g. /cgi-bin/script.py" required
+                               style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;">
+                        <button type="submit" class="btn btn-outline" style="width: 100%;">
+                            Run CGI Script
+                        </button>
+                    </form>
                 </div>
+
+                <!-- POST -->
                 <div class="card">
-                    <h3 style="color: var(--success);">Directory Listing</h3>
-                    <p>Automatically generate directory indexes when no index file is present. Fully customizable.</p>
+                    <h3 style="color: var(--secondary);">POST Requests</h3>
+                    <p>Submit data to the server using a POST request and inspect what the CGI script receives.</p>
+                    <form action="/cgi-bin/script.py" method="post" style="margin-top: 1rem;">
+                        <input type="text" name="message" placeholder="Type a message" required
+                               style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;">
+                        <button type="submit" class="btn btn-primary" style="width: 100%;">Send POST Request</button>
+                    </form>
                 </div>
+
+                <!-- DELETE (user-provided path) -->
                 <div class="card">
-                    <h3 style="color: var(--danger);">Error Handling</h3>
-                    <p>Custom error pages for 404, 500, and other status codes. Keep your users informed.</p>
+                    <h3 style="color: var(--danger);">DELETE Requests</h3>
+                    <p>Enter a URL path for a resource and send a DELETE request to it.</p>
+                    <form id="delete-form" style="margin-top: 1rem;">
+                        <input type="text" id="delete-path" placeholder="e.g. /upload/test-file" required
+                               style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;">
+                        <button type="submit" class="btn btn-outline" style="width: 100%;">
+                            Send DELETE Request
+                        </button>
+                    </form>
                 </div>
+
+                <!-- File Upload / Images -->
                 <div class="card">
-                    <h3 style="color: var(--text);">Redirection</h3>
-                    <p>Seamlessly redirect traffic to new locations with 3xx status codes.</p>
+                    <h3 style="color: var(--success);">Image Uploads</h3>
+                    <p>Upload an image to the server using multipart/form-data and verify that file handling works.</p>
+                    <form action="/upload" method="post" enctype="multipart/form-data" style="margin-top: 1rem;">
+                        <input type="file" name="file" accept="image/*" required
+                               style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;">
+                        <button type="submit" class="btn btn-primary" style="width: 100%;">Upload Image</button>
+                    </form>
                 </div>
-            </div>
+            </section>
         </div>
     </main>
 
@@ -67,5 +100,44 @@
             <p>&copy; 2025 WebServ Project. Built with ❤️ by 42 Students.</p>
         </div>
     </footer>
+
+    <script>
+    // GET demo: navigate to the provided path
+    document.getElementById('get-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var path = document.getElementById('get-path').value.trim();
+        if (!path) return;
+        if (path.charAt(0) !== '/') path = '/' + path;
+        window.location.href = path;
+    });
+
+    // CGI demo: navigate to the provided CGI script path
+    document.getElementById('cgi-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var cgiPath = document.getElementById('cgi-path').value.trim();
+        if (!cgiPath) return;
+        if (cgiPath.charAt(0) !== '/') cgiPath = '/' + cgiPath;
+        window.location.href = cgiPath;
+    });
+
+    // DELETE demo: send DELETE to the provided path
+    document.getElementById('delete-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var delPath = document.getElementById('delete-path').value.trim();
+        if (!delPath) return;
+        if (delPath.charAt(0) !== '/') delPath = '/' + delPath;
+
+        if (!confirm('Send a DELETE request to ' + delPath + '?')) return;
+
+        fetch(delPath, { method: 'DELETE' })
+            .then(function (response) { return response.text(); })
+            .then(function (text) {
+                alert('DELETE response:\n\n' + text);
+            })
+            .catch(function (err) {
+                alert('Error sending DELETE request: ' + err);
+            });
+    });
+    </script>
 </body>
 </html>

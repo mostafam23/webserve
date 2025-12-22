@@ -516,7 +516,8 @@ int startServers(const Servers &servers)
                         {
                             long cl = std::atol(headers["content-length"].c_str());
                             long max = parseSize(target_server->max_size);
-                            if (cl > max)
+                            // Only enforce the limit if max > 0. A value of 0 means "no limit".
+                            if (max > 0 && cl > max)
                             {
                                 std::string error = buildErrorWithCustom(*target_server, 413, "Payload Too Large");
                                 send(fd, error.c_str(), error.size(), 0);

@@ -51,7 +51,8 @@ struct Server
     {
         listen = 8080;
         host = "127.0.0.1";
-        max_size = "1b";
+        // Default to a reasonably large max body size (e.g. 50 MB)
+        max_size = "50m";
         server_name = "localhost";
         root = "./www";
         index = "index.html";
