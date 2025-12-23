@@ -21,6 +21,10 @@
 #include <sstream>
 #include <fstream>
 #include <algorithm>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <signal.h>
 
 // Minimal IPv4 parser: accepts dotted-quad "A.B.C.D" and fills in_addr
 static bool parseIPv4(const std::string &s, in_addr *out)
@@ -532,89 +536,6 @@ int startServers(const Servers &servers)
                                 toClose.push_back(fd);
                                 break;
                             }
-                        }
-
-                        // Handle Uploads
-                        if (loc && !loc->upload_store.empty() && method == "POST")
-                        {
-                            std::string boundary = "";
-                            if (headers.count("content-type"))
-                            {
-                                std::string ct = headers["content-type"];
-                                size_t pos = ct.find("boundary=");
-                                if (pos != std::string::npos)
-                                    boundary = "--" + ct.substr(pos + 9);
-                            }
-
-                            if (boundary.empty())
-                            {
-                                std::string error = buildErrorWithCustom(*target_server, 400, "Bad Request: No boundary");
-                                send(fd, error.c_str(), error.size(), 0);
-                                toClose.push_back(fd);
-                                break;
-                            }
-
-                            std::string body = "";
-                            size_t bodyPos = request.find("\r\n\r\n");
-                            if (bodyPos != std::string::npos)
-                                body = request.substr(bodyPos + 4);
-
-                            size_t filenamePos = body.find("filename=\"");
-                            if (filenamePos == std::string::npos)
-                            {
-                                std::string error = buildErrorWithCustom(*target_server, 400, "Bad Request: No filename");
-                                send(fd, error.c_str(), error.size(), 0);
-                                toClose.push_back(fd);
-                                break;
-                            }
-                            filenamePos += 10;
-                            size_t filenameEnd = body.find("\"", filenamePos);
-                            std::string filename = body.substr(filenamePos, filenameEnd - filenamePos);
-
-                            size_t contentStart = body.find("\r\n\r\n", filenameEnd);
-                            if (contentStart == std::string::npos)
-                            {
-                                std::string error = buildErrorWithCustom(*target_server, 400, "Bad Request: No content");
-                                send(fd, error.c_str(), error.size(), 0);
-                                toClose.push_back(fd);
-                                break;
-                            }
-                            contentStart += 4;
-
-                            size_t contentEnd = body.find(boundary, contentStart);
-                            if (contentEnd == std::string::npos)
-                            {
-                                contentEnd = body.size();
-                            }
-                            if (contentEnd > 2 && body[contentEnd - 2] == '\r' && body[contentEnd - 1] == '\n')
-                                contentEnd -= 2;
-
-                            std::string fileContent = body.substr(contentStart, contentEnd - contentStart);
-                            std::string uploadPath = loc->upload_store + "/" + filename;
-                            std::cout << "Saving file to: " << uploadPath << std::endl;
-
-                            std::ofstream outFile(uploadPath.c_str(), std::ios::binary);
-                            if (!outFile)
-                            {
-                                std::string error = buildErrorWithCustom(*target_server, 500, "Internal Server Error: Could not save file");
-                                send(fd, error.c_str(), error.size(), 0);
-                                toClose.push_back(fd);
-                                break;
-                            }
-                            outFile.write(fileContent.c_str(), fileContent.size());
-                            outFile.close();
-
-                            std::string successPage = "<!DOCTYPE html><html><head><meta http-equiv='refresh' content='3;url=/upload.html'><link rel='stylesheet' href='/assets/css/styles.css'></head><body class='container' style='display:flex;justify-content:center;align-items:center;height:100vh;text-align:center;'><div><h1 style='color:var(--success)'>File Uploaded Successfully</h1><p>Saved as " + filename + "</p><p>Redirecting...</p></div></body></html>";
-                            std::ostringstream resp;
-                            resp << "HTTP/1.1 201 Created\r\n"
-                                 << "Content-Type: text/html\r\n"
-                                 << "Content-Length: " << successPage.size() << "\r\n"
-                                 << "Connection: close\r\n\r\n"
-                                 << successPage;
-                            std::string response = resp.str();
-                            send(fd, response.c_str(), response.size(), 0);
-                            toClose.push_back(fd);
-                            break;
                         }
 
                         std::string effectiveRoot;

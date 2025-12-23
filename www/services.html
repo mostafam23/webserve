@@ -26,7 +26,7 @@
         <div class="container">
             <section class="hero animate-fade-in" style="padding-bottom: 2rem;">
                 <h1>Our Services</h1>
-                <p>Explore how WebServ handles HTTP methods, CGI execution, and file uploads.</p>
+                <p>Explore how WebServ handles HTTP methods and CGI execution.</p>
             </section>
 
             <section class="grid grid-2">
@@ -73,22 +73,11 @@
                     <h3 style="color: var(--danger);">DELETE Requests</h3>
                     <p>Enter a URL path for a resource and send a DELETE request to it securely now.</p>
                     <form id="delete-form" style="margin-top: 1rem;">
-                        <input type="text" id="delete-path" placeholder="e.g. /upload/test-file" required
+                        <input type="text" id="delete-path" placeholder="e.g. /test-file" required
                                style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;">
                         <button type="submit" class="btn btn-primary" style="width: 100%;">
                             Send DELETE Request
                         </button>
-                    </form>
-                </div>
-
-                <!-- File Upload / Images -->
-                <div class="card">
-                    <h3 style="color: var(--success);">Image Uploads</h3>
-                    <p>Upload an image to the server using multipart/form-data and verify that file handling works.</p>
-                    <form action="/upload" method="post" enctype="multipart/form-data" style="margin-top: 1rem;">
-                        <input type="file" name="file" accept="image/*" required
-                               style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;">
-                        <button type="submit" class="btn btn-primary" style="width: 100%;">Upload Image</button>
                     </form>
                 </div>
             </section>

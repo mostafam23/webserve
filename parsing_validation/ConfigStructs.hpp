@@ -13,7 +13,6 @@ struct Location
     std::string root;
     std::string index;
     std::string cgi_extension;
-    std::string upload_store;
     bool autoindex;
     std::pair<int, std::string> redirect;
     bool allow_get;
@@ -26,7 +25,6 @@ struct Location
         root = "";
         index = "";
         cgi_extension = "";
-        upload_store = "";
         autoindex = false;
         redirect = std::make_pair(0, "");
         allow_get = true;

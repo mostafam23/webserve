@@ -498,22 +498,6 @@ bool ConfigValidator::validateDirective(const std::string &line, int lineNum, bo
             return false;
         }
     }
-    else if (directive == "upload_store")
-    {
-        if (!inLocation)
-        {
-            printError("'upload_store' directive only allowed in location block", lineNum);
-            return false;
-        }
-        std::string path;
-        if (!(iss >> path))
-        {
-            printError("'upload_store' directive missing path", lineNum);
-            return false;
-        }
-        if (!path.empty() && path[path.size() - 1] == ';')
-            path = path.substr(0, path.size() - 1);
-    }
     else if (directive == "redirect")
     {
         if (!inLocation)

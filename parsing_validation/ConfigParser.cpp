@@ -305,17 +305,6 @@ Server ConfigParser::parseServer()
                 exit(EXIT_FAILURE);
             }
         }
-        else if (inLocation && line.find("upload_store") == 0)
-        {
-            std::string val = getValue(line);
-            if (val.empty())
-            {
-                std::cerr << "Error: Missing value for 'upload_store' at line "
-                          << lineNum << std::endl;
-                exit(EXIT_FAILURE);
-            }
-            currentLoc.upload_store = val;
-        }
         else if (inLocation && line.find("return") == 0)
         {
             std::istringstream iss(line);
