@@ -1,56 +1,74 @@
 #!/usr/bin/env python3
 import os
 import sys
+import urllib.parse
 
-# CGI header
+# Read POST data if available
+post_data = ""
+if os.environ.get("REQUEST_METHOD") == "POST":
+    try:
+        content_length = int(os.environ.get("CONTENT_LENGTH", 0))
+        if content_length > 0:
+            post_data = sys.stdin.read(content_length)
+    except ValueError:
+        pass
+
+# Parse POST data
+parsed_data = urllib.parse.parse_qs(post_data)
+name = parsed_data.get("name", [""])[0]
+email = parsed_data.get("email", [""])[0]
+message = parsed_data.get("message", [""])[0]
+
 print("Content-Type: text/html\r\n\r\n")
 
 print("""<!DOCTYPE html>
-<html lang="en">
+<html lang=\"en\">
 <head>
-    <meta charset="UTF-8">
-    <title>CGI Test Result</title>
-    <link rel="stylesheet" href="/assets/css/styles.css">
+    <meta charset=\"UTF-8\">
+    <title>CGI Response</title>
+    <link rel=\"stylesheet\" href=\"/assets/css/styles.css\">
 </head>
 <body>
-    <div class="container">
-        <div class="card" style="margin-top: 2rem;">
-            <h1>CGI Test Result</h1>
-            <p>Here is the data received by the CGI script.</p>
-            
-            <h3>Environment Variables</h3>
-            <ul>
+    <div class=\"container\">
+        <div class=\"card\" style=\"margin-top: 2rem;\">
+            <h1>CGI Response</h1>
 """)
 
-for key in [
-    "REQUEST_METHOD",
-    "CONTENT_LENGTH",
-    "CONTENT_TYPE",
-    "QUERY_STRING"
-]:
-    value = os.environ.get(key, "")
-    print(f"<li><strong>{key}:</strong> {value}</li>")
+if name or email or message:
+    print(f"""
+            <div style="background-color: #d4edda; color: #155724; padding: 1rem; border-radius: 0.25rem; margin-bottom: 1rem;">
+                <strong>Success!</strong> Form submitted successfully.
+            </div>
+            <h3>Received Data:</h3>
+            <ul>
+                <li><strong>Name:</strong> {name}</li>
+                <li><strong>Email:</strong> {email}</li>
+                <li><strong>Message:</strong> {message}</li>
+            </ul>
+    """)
+else:
+    print("""
+            <p>This script prints selected CGI-related environment variables.</p>
+            <ul>
+    """)
+    for key in [
+        "REQUEST_METHOD",
+        "REQUEST_URI",
+        "QUERY_STRING",
+        "CONTENT_TYPE",
+        "CONTENT_LENGTH",
+        "SERVER_PROTOCOL",
+        "SERVER_NAME",
+        "SERVER_PORT",
+    ]:
+        value = os.environ.get(key, "<not set>")
+        print(f"<li><strong>{key}:</strong> {value}</li>")
+    print("</ul>")
 
 print("""
-            </ul>
-            
-            <h3>Request Body</h3>
-            <pre style="background: #f4f4f4; padding: 1rem; border-radius: 4px;">""")
-
-# Read stdin if content-length is set
-try:
-    content_length = int(os.environ.get("CONTENT_LENGTH", 0))
-    if content_length > 0:
-        body = sys.stdin.read(content_length)
-        print(body)
-    else:
-        print("(No body content)")
-except Exception as e:
-    print(f"Error reading body: {e}")
-
-print("""</pre>
-            <div class="mt-4">
-                <a href="/services.html" class="btn btn-outline">Back to Services</a>
+            <div class=\"mt-4\">
+                <a href=\"/contact.html\" class=\"btn btn-outline\">Back to Contact</a>
+                <a href=\"/services.html\" class=\"btn btn-outline\" style="margin-left: 10px;">Back to Services</a>
             </div>
         </div>
     </div>

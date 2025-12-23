@@ -428,6 +428,14 @@ int startServers(const Servers &servers)
                         std::string method, path, version;
                         iss >> method >> path >> version;
 
+                        std::string queryString = "";
+                        size_t qPos = path.find('?');
+                        if (qPos != std::string::npos)
+                        {
+                            queryString = path.substr(qPos + 1);
+                            path = path.substr(0, qPos);
+                        }
+
                         if (method.empty() || path.empty() || version.empty())
                         {
                             std::string error = buildErrorResponse(400, "Invalid request");
@@ -679,13 +687,6 @@ int startServers(const Servers &servers)
                             size_t extPos = fullPath.rfind(loc->cgi_extension);
                             if (extPos != std::string::npos && extPos == fullPath.size() - loc->cgi_extension.size())
                             {
-                                std::string query = "";
-                                size_t qPos = path.find('?');
-                                if (qPos != std::string::npos)
-                                {
-                                    query = path.substr(qPos + 1);
-                                }
-
                                 std::string body = "";
                                 size_t bodyPos = request.find("\r\n\r\n");
                                 if (bodyPos != std::string::npos)
@@ -693,7 +694,7 @@ int startServers(const Servers &servers)
                                     body = request.substr(bodyPos + 4);
                                 }
 
-                                std::string cgiOutput = CgiHandler::executeCgi(fullPath, method, query, body, headers, *target_server, *loc);
+                                std::string cgiOutput = CgiHandler::executeCgi(fullPath, method, queryString, body, headers, *target_server, *loc);
 
                                 std::string response;
                                 if (cgiOutput.find("HTTP/") == 0)

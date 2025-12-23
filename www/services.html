@@ -17,7 +17,6 @@
                     <a href="/about.html">About</a>
                     <a href="/services.html" class="active">Services</a>
                     <a href="/contact.html">Contact</a>
-                    <a href="/cgi-bin/script.py">CGI Test</a>
                 </div>
             </nav>
         </div>
@@ -34,11 +33,10 @@
                 <!-- GET (user-provided path) -->
                 <div class="card">
                     <h3 style="color: var(--primary);">GET Requests</h3>
-                    <p>Enter a URL path and let WebServ perform a GET request to that resource.</p>
                     <form id="get-form" style="margin-top: 1rem;">
                         <input type="text" id="get-path" placeholder="e.g. /42.html or /about.html" required
                                style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;">
-                        <button type="submit" class="btn btn-outline" style="width: 100%;">
+                        <button type="submit" class="btn btn-primary" style="width: 100%;">
                             Send GET Request
                         </button>
                     </form>
@@ -47,23 +45,25 @@
                 <!-- CGI (user-provided script path) -->
                 <div class="card">
                     <h3 style="color: var(--accent);">CGI Execution</h3>
-                    <p>Enter the path of a CGI script and let WebServ execute it.</p>
                     <form id="cgi-form" style="margin-top: 1rem;">
                         <input type="text" id="cgi-path" placeholder="e.g. /cgi-bin/script.py" required
                                style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;">
-                        <button type="submit" class="btn btn-outline" style="width: 100%;">
+                        <button type="submit" class="btn btn-primary" style="width: 100%;">
                             Run CGI Script
                         </button>
+                       
                     </form>
                 </div>
 
                 <!-- POST -->
                 <div class="card">
                     <h3 style="color: var(--secondary);">POST Requests</h3>
-                    <p>Submit data to the server using a POST request and inspect what the CGI script receives.</p>
-                    <form action="/cgi-bin/script.py" method="post" style="margin-top: 1rem;">
-                        <input type="text" name="message" placeholder="Type a message" required
+                   
+                    <form id="post-form" style="margin-top: 1rem;">
+                        <input type="text" id="post-path" placeholder="File path (e.g. /newfile.txt)" required
                                style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;">
+                        <textarea id="post-data" placeholder="Enter content to save in the file" required
+                                  style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem; min-height: 100px; font-family: monospace;"></textarea>
                         <button type="submit" class="btn btn-primary" style="width: 100%;">Send POST Request</button>
                     </form>
                 </div>
@@ -71,11 +71,11 @@
                 <!-- DELETE (user-provided path) -->
                 <div class="card">
                     <h3 style="color: var(--danger);">DELETE Requests</h3>
-                    <p>Enter a URL path for a resource and send a DELETE request to it.</p>
+                    <p>Enter a URL path for a resource and send a DELETE request to it securely now.</p>
                     <form id="delete-form" style="margin-top: 1rem;">
                         <input type="text" id="delete-path" placeholder="e.g. /upload/test-file" required
                                style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;">
-                        <button type="submit" class="btn btn-outline" style="width: 100%;">
+                        <button type="submit" class="btn btn-primary" style="width: 100%;">
                             Send DELETE Request
                         </button>
                     </form>
@@ -120,6 +120,32 @@
         window.location.href = cgiPath;
     });
 
+    // POST demo: send POST to the provided path with data
+    document.getElementById('post-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var postPath = document.getElementById('post-path').value.trim();
+        var postData = document.getElementById('post-data').value;
+        
+        if (!postPath) return;
+        if (postPath.charAt(0) !== '/') postPath = '/' + postPath;
+
+        fetch(postPath, { 
+            method: 'POST',
+            body: postData
+        })
+            .then(function (response) { 
+                return response.text().then(function(text) {
+                    return { status: response.status, text: text };
+                });
+            })
+            .then(function (result) {
+                alert('POST response (' + result.status + '):\n\n' + result.text);
+            })
+            .catch(function (err) {
+                alert('Error sending POST request: ' + err);
+            });
+    });
+
     // DELETE demo: send DELETE to the provided path
     document.getElementById('delete-form').addEventListener('submit', function (e) {
         e.preventDefault();
@@ -130,9 +156,18 @@
         if (!confirm('Send a DELETE request to ' + delPath + '?')) return;
 
         fetch(delPath, { method: 'DELETE' })
-            .then(function (response) { return response.text(); })
-            .then(function (text) {
-                alert('DELETE response:\n\n' + text);
+            .then(function (response) { 
+                if (response.status === 404) {
+                    // If 404, render the error page content directly
+                    return response.text().then(function(html) {
+                        document.open();
+                        document.write(html);
+                        document.close();
+                    });
+                }
+                return response.text().then(function(text) {
+                    alert('DELETE response (' + response.status + '):\n\n' + text);
+                });
             })
             .catch(function (err) {
                 alert('Error sending DELETE request: ' + err);
