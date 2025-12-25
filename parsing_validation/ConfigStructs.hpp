@@ -13,6 +13,7 @@ struct Location
     std::string root;
     std::string index;
     std::vector<std::string> cgi_extensions;
+    std::string upload_path;
     bool autoindex;
     std::pair<int, std::string> redirect;
     bool allow_get;
@@ -24,6 +25,7 @@ struct Location
         path = "";
         root = "";
         index = "";
+        upload_path = "";
         // cgi_extensions is empty by default
         autoindex = false;
         redirect = std::make_pair(0, "");

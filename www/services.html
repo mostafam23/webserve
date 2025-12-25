@@ -60,12 +60,23 @@
                     <h3 style="color: var(--secondary);">POST Requests</h3>
                    
                     <form id="post-form" style="margin-top: 1rem;">
-                        <input type="text" id="post-path" placeholder="File path (e.g. /newfile.txt)" required
+                        <input type="text" id="post-path" placeholder="File path (e.g. /uploads/newfile.txt)" required
                                style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem;">
                         <textarea id="post-data" placeholder="Enter content to save in the file" required
                                   style="width: 100%; padding: 0.5rem; margin-bottom: 0.75rem; min-height: 100px; font-family: monospace;"></textarea>
                         <button type="submit" class="btn btn-primary" style="width: 100%;">Send POST Request</button>
                     </form>
+                </div>
+
+                <!-- Upload -->
+                <div class="card">
+                    <h3 style="color: var(--secondary);">File Upload</h3>
+                    <p>Select a file to upload to the server.</p>
+                    <div style="margin-top: 1rem;">
+                        <input type="file" id="file-input" style="margin-bottom: 0.75rem;">
+                        <button onclick="uploadFile()" class="btn btn-outline" style="width: 100%;">Upload File</button>
+                        <div id="upload-status" style="margin-top: 0.5rem; font-size: 0.9rem;"></div>
+                    </div>
                 </div>
 
                 <!-- DELETE (user-provided path) -->
@@ -134,6 +145,39 @@
                 alert('Error sending POST request: ' + err);
             });
     });
+
+    async function uploadFile() {
+        const fileInput = document.getElementById('file-input');
+        const status = document.getElementById('upload-status');
+        
+        if (!fileInput.files[0]) {
+            status.textContent = "Please select a file first.";
+            status.style.color = "red";
+            return;
+        }
+
+        const file = fileInput.files[0];
+        status.textContent = "Uploading " + file.name + "...";
+        status.style.color = "blue";
+
+        try {
+            const response = await fetch('/uploads/' + file.name, {
+                method: 'POST',
+                body: file
+            });
+
+            if (response.ok) {
+                status.textContent = "Success! File uploaded.";
+                status.style.color = "green";
+            } else {
+                status.textContent = "Error: " + response.status + " " + response.statusText;
+                status.style.color = "red";
+            }
+        } catch (e) {
+            status.textContent = "Network Error: " + e.message;
+            status.style.color = "red";
+        }
+    }
 
     // DELETE demo: send DELETE to the provided path
     document.getElementById('delete-form').addEventListener('submit', function (e) {

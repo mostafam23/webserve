@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>File Upload Test</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+        .card { border: 1px solid #ccc; padding: 1.5rem; border-radius: 8px; }
+        button { background: #007bff; color: white; border: none; padding: 0.5rem 1rem; cursor: pointer; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <h1>File Upload Test</h1>
+    <div class="card">
+        <p>Select a file to upload to <code>/uploads</code></p>
+        <!-- Note: Simple raw body upload for this server implementation -->
+        <p><strong>Method 1: Raw Body Upload (JS)</strong></p>
+        <input type="file" id="fileInput">
+        <button onclick="uploadFile()">Upload</button>
+        <pre id="status"></pre>
+    </div>
+
+    <script>
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const status = document.getElementById('status');
+            
+            if (!fileInput.files[0]) {
+                status.textContent = "Please select a file first.";
+                return;
+            }
+
+            const file = fileInput.files[0];
+            status.textContent = "Uploading " + file.name + "...";
+
+            try {
+                // We upload to /uploads/filename
+                const response = await fetch('/uploads/' + file.name, {
+                    method: 'POST',
+                    body: file
+                });
+
+                if (response.ok) {
+                    status.textContent = "Success! File uploaded.";
+                } else {
+                    status.textContent = "Error: " + response.status + " " + response.statusText;
+                }
+            } catch (e) {
+                status.textContent = "Network Error: " + e.message;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -9,6 +9,10 @@ static bool endsWith(const std::string& s, const std::string& suffix) {
 }
 
 bool validateArgs(const std::vector<std::string>& args, std::string& error) {
+    if (args.empty()) {
+        error = "missing configuration file argument";
+        return false;
+    }
     if (args.size() > 1) {
         error = "too many arguments";
         return false;

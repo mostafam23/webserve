@@ -515,6 +515,20 @@ bool ConfigValidator::validateDirective(const std::string &line, int lineNum, bo
         if (!url.empty() && url[url.size() - 1] == ';')
             url = url.substr(0, url.size() - 1);
     }
+    else if (directive == "upload_path")
+    {
+        if (!inLocation)
+        {
+            printError("'upload_path' directive only allowed in location block", lineNum);
+            return false;
+        }
+        std::string path;
+        if (!(iss >> path))
+        {
+            printError("'upload_path' directive missing path", lineNum);
+            return false;
+        }
+    }
     else if (directive != "location" && directive != "server")
     {
         printError("Unknown directive '" + directive + "'", lineNum);

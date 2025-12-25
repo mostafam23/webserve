@@ -1,6 +1,5 @@
 // Intentionally left minimal — implementations moved to ConfigParser_Parse.cpp
 #include "ConfigParser.hpp"
-#include "ConfigParser_Internal.hpp"
 #include <fstream>
 #include <sstream>
 #include <cstdlib>
@@ -15,6 +14,14 @@ bool ConfigParser::validateConfigFile(const std::string &filename)
 {
     ConfigValidator validator(filename);
     return validator.validate();
+}
+
+std::string cp_removeComments(const std::string &line)
+{
+    size_t pos = line.find('#');
+    if (pos != std::string::npos)
+        return line.substr(0, pos);
+    return line;
 }
 
 // helpers are implemented in ConfigParser_Utils.cpp and cp_removeComments() in ConfigParser_Internal.cpp
@@ -341,6 +348,18 @@ Server ConfigParser::parseServer()
                 currentLoc.cgi_extensions.push_back(ext);
             }
         }
+        else if (inLocation && line.find("upload_path") == 0)
+        {
+            std::string val = getValue(line);
+            if (val.empty())
+            {
+                std::cerr << "Error: Missing value for 'upload_path' at line "
+                          << lineNum << std::endl;
+                exit(EXIT_FAILURE);
+            }
+            currentLoc.upload_path = val;
+            std::cout << "[DEBUG] Parsed upload_path: " << val << " for location: " << currentLoc.path << std::endl;
+        }
         else
         {
             std::cerr << "Error: Unknown or misplaced directive at line " << lineNum
@@ -624,6 +643,45 @@ Servers ConfigParser::parseServers()
                         ext = ext.substr(0, ext.size() - 1);
                     currentLoc.cgi_extensions.push_back(ext);
                 }
+            }
+            else if (line.find("upload_path") == 0)
+            {
+                std::string val = getValue(line);
+                if (val.empty())
+                {
+                    std::cerr << "Error: Missing value for 'upload_path' at line " << lineNum << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+                currentLoc.upload_path = val;
+            }
+            else if (line.find("autoindex") == 0)
+            {
+                std::string val = getValue(line);
+                if (val == "on")
+                    currentLoc.autoindex = true;
+                else if (val == "off")
+                    currentLoc.autoindex = false;
+            }
+            else if (line.find("index") == 0)
+            {
+                std::string val = getValue(line);
+                if (val.empty())
+                {
+                    std::cerr << "Error: Missing value for 'index' at line " << lineNum << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+                currentLoc.index = val;
+            }
+            else if (line.find("return") == 0)
+            {
+                std::istringstream iss(line);
+                std::string key;
+                int code;
+                std::string url;
+                iss >> key >> code >> url;
+                if (!url.empty() && url[url.size() - 1] == ';')
+                    url = url.substr(0, url.size() - 1);
+                currentLoc.redirect = std::make_pair(code, url);
             }
         }
     }

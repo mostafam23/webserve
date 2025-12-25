@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <vector>
+#include <unistd.h>
 
 #include "ArgValidation.hpp"
 #include "ConfigSource.hpp"
@@ -26,18 +27,16 @@ int App::run(int argc, char* argv[]) {
         return 1;
     }
     // Null Object Pattern: pick default or file-based config source.
-    IConfigSource* src = 0;
-    DefaultConfigSource defaultSrc;
-    FileConfigSource fileSrc( args.size() ? args[0] : std::string() );
-    if (args.empty()) 
-        src = &defaultSrc;
-    else 
-        src = &fileSrc;
+    // Since we enforce one argument, we always use FileConfigSource.
+    FileConfigSource fileSrc(args[0]);
+    IConfigSource* src = &fileSrc;
 
     std::cout << "=== WebServer Starting ===" << std::endl;
-    std::cout << "Debug mode: ON (colored logs enabled)\n";
-    if (!args.empty())
-        std::cout << "Config file: " << args[0] << std::endl;
+    char cwd[1024];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        std::cout << "Current working directory: " << cwd << std::endl;
+    }
+    std::cout << "Config file: " << args[0] << std::endl;
     signal(SIGINT, signalHandler);
     signal(SIGTERM, signalHandler);
 
@@ -49,8 +48,7 @@ int App::run(int argc, char* argv[]) {
         return 1;
     }
 
-    if (!args.empty())
-        std::cout << "Configuration parsed successfully!\n";
+    std::cout << "Configuration parsed successfully!\n";
 
     std::cout << "\n=== Server Configurations ===\n";
     for (size_t i = 0; i < servers.count(); ++i) {

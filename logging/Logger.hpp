@@ -6,6 +6,7 @@
 namespace Logger {
 void info(const std::string &msg);
 void request(const std::string &msg);
+void debug(const std::string &msg);
 }
 
 #endif

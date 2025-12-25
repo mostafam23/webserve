@@ -1,6 +1,6 @@
 #include "ServerMain.hpp"
 #include "../signals/SignalHandler.hpp"
-#include "../concurrency/ClientRegistry.hpp"
+#include "../client_services/ClientRegistry.hpp"
 #include "../http/HttpUtils.hpp"
 #include "../utils/Utils.hpp"
 #include "../logging/Logger.hpp"
@@ -638,6 +638,81 @@ int startServers(const Servers &servers)
                                 continue;
                             }
                         }
+
+                        // Debug logging
+                        if (loc) {
+                            std::ostringstream oss;
+                            oss << "Method: " << method << ", Loc: " << loc->path 
+                                << ", UploadPath: '" << loc->upload_path << "'";
+                            Logger::debug(oss.str());
+                        } else {
+                            std::ostringstream oss;
+                            oss << "Method: " << method << ", Loc: NULL";
+                            Logger::debug(oss.str());
+                        }
+
+                        // 5. Handle Uploads (POST)
+                        if (method == "POST" && loc && !loc->upload_path.empty())
+                        {
+                            std::string body = "";
+                            size_t bodyPos = request.find("\r\n\r\n");
+                            if (bodyPos != std::string::npos)
+                                body = request.substr(bodyPos + 4);
+                            
+                            // Extract filename from path
+                            std::string filename = "uploaded_file";
+                            size_t lastSlash = path.find_last_of('/');
+                            if (lastSlash != std::string::npos && lastSlash + 1 < path.size())
+                                filename = path.substr(lastSlash + 1);
+                            
+                            std::string targetPath = joinPaths(loc->upload_path, filename);
+                            
+                            std::ofstream outfile(targetPath.c_str(), std::ios::binary);
+                            if (outfile.is_open())
+                            {
+                                outfile.write(body.c_str(), body.size());
+                                outfile.close();
+                                
+                                std::string response = "HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                                send(fd, response.c_str(), response.size(), 0);
+                            }
+                            else
+                            {
+                                std::cerr << "Error: Failed to open file for writing: " << targetPath << " (" << strerror(errno) << ")" << std::endl;
+                                std::string error = buildErrorWithCustom(*target_server, 500, "Internal Server Error");
+                                send(fd, error.c_str(), error.size(), 0);
+                            }
+                            
+                            if (!client_wants_keepalive)
+                                toClose.push_back(fd);
+                            recvBuf[fd].clear();
+                            continue;
+                        }
+
+                        // 6. Handle DELETE
+                        if (method == "DELETE")
+                        {
+                            if (std::remove(fullPath.c_str()) == 0)
+                            {
+                                std::string response = "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                                send(fd, response.c_str(), response.size(), 0);
+                            }
+                            else
+                            {
+                                if (access(fullPath.c_str(), F_OK) == -1) {
+                                     std::string error = buildErrorWithCustom(*target_server, 404, "Not Found");
+                                     send(fd, error.c_str(), error.size(), 0);
+                                } else {
+                                     std::string error = buildErrorWithCustom(*target_server, 403, "Forbidden");
+                                     send(fd, error.c_str(), error.size(), 0);
+                                }
+                            }
+                            if (!client_wants_keepalive)
+                                toClose.push_back(fd);
+                            recvBuf[fd].clear();
+                            continue;
+                        }
+
                         std::string contentType = "text/html";
                         size_t dot = fullPath.find_last_of('.');
                         if (dot != std::string::npos)
@@ -709,6 +784,7 @@ int startServers(const Servers &servers)
                             }
                             else
                             {
+                                std::cerr << "Error: Failed to open file for writing (generic POST): " << fullPath << " (" << strerror(errno) << ")" << std::endl;
                                 response = buildErrorWithCustom(*target_server, 500, "Internal Server Error");
                                 client_wants_keepalive = false;
                             }
