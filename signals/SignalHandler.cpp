@@ -5,8 +5,6 @@
 
 volatile sig_atomic_t g_shutdown = 0;
 std::vector<int> g_server_socks;
-// Backward compatibility for single-server function
-int g_server_sock = -1;
 
 void signalHandler(int signum) {
     std::cout << "\n\nShutdown signal received (" << signum << ")..." << std::endl;

@@ -300,12 +300,6 @@ int startServers(const Servers &servers)
 
     std::cout << "Press Ctrl+C to stop the servers\n==============================\n";
 
-    // Set backward compatibility variable to first server socket
-    if (!g_server_socks.empty())
-    {
-        g_server_sock = g_server_socks[0];
-    }
-
     // Per-client buffers and request counters
     std::map<int, std::string> recvBuf;
     std::map<int, int> reqCount;
@@ -603,10 +597,19 @@ int startServers(const Servers &servers)
                         };
 
                         // 4. Handle CGI
-                        if (loc && !loc->cgi_extension.empty())
+                        if (loc && !loc->cgi_extensions.empty())
                         {
-                            size_t extPos = fullPath.rfind(loc->cgi_extension);
-                            if (extPos != std::string::npos && extPos == fullPath.size() - loc->cgi_extension.size())
+                            bool isCgi = false;
+                            for (size_t i = 0; i < loc->cgi_extensions.size(); ++i) {
+                                const std::string& ext = loc->cgi_extensions[i];
+                                size_t extPos = fullPath.rfind(ext);
+                                if (extPos != std::string::npos && extPos == fullPath.size() - ext.size()) {
+                                    isCgi = true;
+                                    break;
+                                }
+                            }
+
+                            if (isCgi)
                             {
                                 std::string body = "";
                                 size_t bodyPos = request.find("\r\n\r\n");

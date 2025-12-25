@@ -1,7 +1,6 @@
 CXX = g++
 CXXFLAGS = -Wall -Wextra -Werror -std=c++98
 
-
 SRCS = main.cpp \
        parsing_validation/ConfigParser.cpp \
        parsing_validation/ConfigParser_Utils.cpp \

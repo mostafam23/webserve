@@ -332,7 +332,14 @@ Server ConfigParser::parseServer()
                           << lineNum << std::endl;
                 exit(EXIT_FAILURE);
             }
-            currentLoc.cgi_extension = val;
+            // Split by space to allow multiple extensions
+            std::istringstream iss(val);
+            std::string ext;
+            while (iss >> ext) {
+                if (!ext.empty() && ext[ext.size() - 1] == ';')
+                    ext = ext.substr(0, ext.size() - 1);
+                currentLoc.cgi_extensions.push_back(ext);
+            }
         }
         else
         {
@@ -609,7 +616,14 @@ Servers ConfigParser::parseServers()
                     std::cerr << "Error: Missing value for 'cgi_extension' at line " << lineNum << std::endl;
                     exit(EXIT_FAILURE);
                 }
-                currentLoc.cgi_extension = val;
+                // Split by space to allow multiple extensions
+                std::istringstream iss(val);
+                std::string ext;
+                while (iss >> ext) {
+                    if (!ext.empty() && ext[ext.size() - 1] == ';')
+                        ext = ext.substr(0, ext.size() - 1);
+                    currentLoc.cgi_extensions.push_back(ext);
+                }
             }
         }
     }

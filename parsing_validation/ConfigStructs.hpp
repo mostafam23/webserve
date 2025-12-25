@@ -12,7 +12,7 @@ struct Location
     std::set<std::string> methods;
     std::string root;
     std::string index;
-    std::string cgi_extension;
+    std::vector<std::string> cgi_extensions;
     bool autoindex;
     std::pair<int, std::string> redirect;
     bool allow_get;
@@ -24,7 +24,7 @@ struct Location
         path = "";
         root = "";
         index = "";
-        cgi_extension = "";
+        // cgi_extensions is empty by default
         autoindex = false;
         redirect = std::make_pair(0, "");
         allow_get = true;
@@ -55,6 +55,11 @@ struct Server
         root = "./www";
         index = "index.html";
         location_count = 0;
+
+        // Default error pages
+        error_pages[404] = "/errors/404.html";
+        error_pages[500] = "/errors/500.html";
+        error_pages[505] = "/errors/505.html";
     }
 };
 

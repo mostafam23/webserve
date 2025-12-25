@@ -6,8 +6,6 @@
 
 extern volatile sig_atomic_t g_shutdown;
 extern std::vector<int> g_server_socks;
-// Backward compatibility for single-server function
-extern int g_server_sock;
 
 void signalHandler(int signum);
 

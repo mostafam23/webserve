@@ -3,6 +3,7 @@
 #define CONFIG_SOURCE_HPP
 
 #include <string>
+#include <stdexcept>
 #include "../parsing_validation/ConfigStructs.hpp"
 #include "../parsing_validation/ConfigParser.hpp"
 
@@ -25,12 +26,16 @@ struct DefaultConfigSource : public IConfigSource {
 struct FileConfigSource : public IConfigSource {
     FileConfigSource(const std::string& path) : path_(path) {}
     Servers buildServers() {
-        ConfigParser::validateConfigFile(path_);
+        if (!ConfigParser::validateConfigFile(path_)) {
+            throw std::runtime_error("Configuration validation failed");
+        }
         ConfigParser parser(path_);
         return parser.parseServers();
     }
     Server buildServer() {
-        ConfigParser::validateConfigFile(path_);
+        if (!ConfigParser::validateConfigFile(path_)) {
+            throw std::runtime_error("Configuration validation failed");
+        }
         ConfigParser parser(path_);
         return parser.parseServer();
     }

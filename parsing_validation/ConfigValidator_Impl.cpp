@@ -71,7 +71,7 @@ bool ConfigValidator::validate()
     if (!file.is_open())
     {
         printError("Cannot open file '" + filename + "'");
-        exit(EXIT_FAILURE);
+        return false;
     }
 
     std::string line;
@@ -85,17 +85,17 @@ bool ConfigValidator::validate()
     if (lines.empty())
     {
         printError("Configuration file is empty");
-        exit(EXIT_FAILURE);
+        return false;
     }
 
     if (!validateBraces())
-        exit(EXIT_FAILURE);
+        return false;
 
     if (!validateSyntax())
-        exit(EXIT_FAILURE);
+        return false;
 
     if (!checkDuplicateServerNames())
-        exit(EXIT_FAILURE);
+        return false;
 
     return true;
 }
@@ -526,8 +526,11 @@ bool ConfigValidator::validateDirective(const std::string &line, int lineNum, bo
 
 bool ConfigValidator::checkDuplicateServerNames()
 {
-    std::set<std::string> serverNames;
+    std::set<std::string> serverConfigs; // Stores "port:server_name"
     bool inServer = false;
+    int currentPort = 8080;
+    std::string currentName = "";
+    int braceCount = 0;
 
     for (size_t i = 0; i < lines.size(); ++i)
     {
@@ -536,33 +539,59 @@ bool ConfigValidator::checkDuplicateServerNames()
         if (line.empty())
             continue;
 
-        if (line.find("server") == 0)
+        // Track braces to know when server block ends
+        if (line.find("{") != std::string::npos) braceCount++;
+        if (line.find("}") != std::string::npos) braceCount--;
+
+        if (line.find("server") == 0 && !inServer)
         {
             inServer = true;
+            currentPort = 8080; // Default port
+            currentName = "";
         }
-
-        if (inServer && line.find("server_name") == 0)
+        else if (inServer)
         {
-            std::istringstream iss(line);
-            std::string directive, name;
-            iss >> directive >> name;
-
-            if (!name.empty() && name[name.size() - 1] == ';')
+            if (line.find("listen") == 0)
             {
-                name = name.substr(0, name.size() - 1);
+                std::istringstream iss(line);
+                std::string directive, val;
+                iss >> directive >> val;
+                if (!val.empty() && val[val.size() - 1] == ';')
+                    val = val.substr(0, val.size() - 1);
+                
+                size_t colon = val.find(':');
+                if (colon != std::string::npos)
+                    val = val.substr(colon + 1);
+                
+                currentPort = std::atoi(val.c_str());
+            }
+            else if (line.find("server_name") == 0)
+            {
+                std::istringstream iss(line);
+                std::string directive, name;
+                iss >> directive >> name;
+
+                if (!name.empty() && name[name.size() - 1] == ';')
+                    name = name.substr(0, name.size() - 1);
+                
+                currentName = name;
             }
 
-            if (serverNames.count(name))
+            // Check if server block ended
+            if (braceCount == 0)
             {
-                printError("Duplicate server_name '" + name + "'", i + 1);
-                return false;
-            }
-            serverNames.insert(name);
-        }
+                std::stringstream ss;
+                ss << currentPort << ":" << currentName;
+                std::string key = ss.str();
 
-        if (line == "}" && inServer)
-        {
-            inServer = false;
+                if (serverConfigs.count(key))
+                {
+                    printError("Duplicate server configuration: port " + key, i + 1);
+                    return false;
+                }
+                serverConfigs.insert(key);
+                inServer = false;
+            }
         }
     }
 

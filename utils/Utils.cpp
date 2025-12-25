@@ -13,41 +13,6 @@ bool isDirectory(const std::string &path)
     return false;
 }
 
-int ft_atoi(const char *str)
-{
-    if (!str)
-        return 0;
-
-    int i = 0;
-    // Skip leading whitespaces
-    while (str[i] == ' ' || str[i] == '\t' || str[i] == '\n')
-        i++;
-
-    // Handle optional sign
-    int sign = 1;
-    if (str[i] == '+' || str[i] == '-')
-    {
-        if (str[i] == '-')
-            sign = -1;
-        i++;
-    }
-
-    int result = 0;
-    while (str[i] >= '0' && str[i] <= '9')
-    {
-        int digit = str[i] - '0';
-
-        // Check for overflow
-        if (result > (INT_MAX - digit) / 10)
-            return (sign == 1) ? INT_MAX : INT_MIN;
-
-        result = result * 10 + digit;
-        i++;
-    }
-
-    return result * sign;
-}
-
 std::string generateDirectoryListing(const std::string &path, const std::string &requestPath)
 {
     DIR *dir;

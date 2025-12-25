@@ -42,7 +42,13 @@ int App::run(int argc, char* argv[]) {
     signal(SIGTERM, signalHandler);
 
     // Build servers via config source and start
-    Servers servers = src->buildServers();
+    Servers servers;
+    try {
+        servers = src->buildServers();
+    } catch (const std::exception& e) {
+        return 1;
+    }
+
     if (!args.empty())
         std::cout << "Configuration parsed successfully!\n";
 
