@@ -6,7 +6,7 @@
 #include <string>
 
 std::string intToString(int n);
-bool isRequestComplete(const char *buffer, size_t length);
+size_t getRequestLength(const char *buffer, size_t length);
 std::string buildErrorResponse(int code, const std::string &message);
 std::map<std::string, std::string> parseHeaders(const std::string &request);
 

@@ -417,10 +417,19 @@ int startServers(const Servers &servers)
                 if (n > 0)
                 {
                     recvBuf[fd].append(buffer, n);
-                    if (isRequestComplete(recvBuf[fd].c_str(), (int)recvBuf[fd].size()))
+                    
+                    // Process all complete requests in the buffer
+                    while (true)
                     {
-                        // Process request (same logic as original)
-                        std::string request = recvBuf[fd];
+                        size_t reqLen = getRequestLength(recvBuf[fd].c_str(), recvBuf[fd].size());
+                        if (reqLen == 0)
+                            break; // Request not complete yet
+
+                        // Extract the complete request
+                        std::string request = recvBuf[fd].substr(0, reqLen);
+                        // Remove processed request from buffer
+                        recvBuf[fd] = recvBuf[fd].substr(reqLen);
+
                         reqCount[fd]++;
                         std::istringstream iss(request);
                         std::string method, path, version;
@@ -581,7 +590,7 @@ int startServers(const Servers &servers)
                                 send(fd, response.c_str(), response.size(), 0);
                                 if (!client_wants_keepalive)
                                     toClose.push_back(fd);
-                                recvBuf[fd].clear();
+                                // recvBuf[fd].clear(); // Don't clear, we might have more requests
                                 continue;
                             }
                             else
@@ -591,7 +600,7 @@ int startServers(const Servers &servers)
                                 send(fd, error.c_str(), error.size(), 0);
                                 if (!client_wants_keepalive)
                                     toClose.push_back(fd);
-                                recvBuf[fd].clear();
+                                // recvBuf[fd].clear();
                                 continue;
                             }
                         };
@@ -634,7 +643,7 @@ int startServers(const Servers &servers)
                                 send(fd, response.c_str(), response.size(), 0);
                                 if (!client_wants_keepalive)
                                     toClose.push_back(fd);
-                                recvBuf[fd].clear();
+                                // recvBuf[fd].clear();
                                 continue;
                             }
                         }
@@ -678,14 +687,14 @@ int startServers(const Servers &servers)
                             }
                             else
                             {
-                                std::cerr << "Error: Failed to open file for writing: " << targetPath << " (" << strerror(errno) << ")" << std::endl;
+                                std::cerr << "Error: Failed to open file for writing: " << targetPath << " (" << strerror(errno) << std::endl;
                                 std::string error = buildErrorWithCustom(*target_server, 500, "Internal Server Error");
                                 send(fd, error.c_str(), error.size(), 0);
                             }
                             
                             if (!client_wants_keepalive)
                                 toClose.push_back(fd);
-                            recvBuf[fd].clear();
+                            // recvBuf[fd].clear();
                             continue;
                         }
 
@@ -709,7 +718,7 @@ int startServers(const Servers &servers)
                             }
                             if (!client_wants_keepalive)
                                 toClose.push_back(fd);
-                            recvBuf[fd].clear();
+                            // recvBuf[fd].clear();
                             continue;
                         }
 
@@ -761,17 +770,28 @@ int startServers(const Servers &servers)
                         else if (method == "POST")
                         {
                             // Simple POST handler that creates/updates the file
+                            
+                            struct stat st;
+                            if (stat(fullPath.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+                                // It's a directory. We can't write to it as a file.
+                                std::string error = buildErrorWithCustom(*target_server, 405, "Method Not Allowed");
+                                send(fd, error.c_str(), error.size(), 0);
+                                client_wants_keepalive = false;
+                                toClose.push_back(fd);
+                                break;
+                            }
+
                             std::ofstream out(fullPath.c_str(), std::ios::binary);
                             if (out)
                             {
                                 // Get the request body (simplified - in real case, parse Content-Length and read body properly)
-                                size_t body_pos = request.find("\r\n\r\n") + 4;
-                                if (body_pos < request.length())
+                                size_t body_pos = request.find("\r\n\r\n");
+                                if (body_pos != std::string::npos)
                                 {
-                                    std::string body = request.substr(body_pos);
+                                    std::string body = request.substr(body_pos + 4);
                                     out << body;
-                                    response = "HTTP/1.1 201 Created\r\n";
-                                    response += "Content-Type: application/json\r\n";
+                                    response = "HTTP/1.1 200 OK\r\n";
+                                    response += "Content-Type: text/plain\r\n";
                                     response += "Content-Length: 0\r\n";
                                     response += client_wants_keepalive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
                                     response += "\r\n";
@@ -821,7 +841,7 @@ int startServers(const Servers &servers)
                             toClose.push_back(fd);
                             break;
                         }
-                        recvBuf[fd].clear();
+                        // recvBuf[fd].clear(); // Handled by loop
                     }
                 }
                 // n will be 0 if the client closed the terminal => close the connection

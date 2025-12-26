@@ -567,12 +567,18 @@ Servers ConfigParser::parseServers()
                 std::string val = getValue(line);
                 if (val.empty())
                 {
-                    throwError("Missing value for 'methods'", lineNum);
+                    std::cerr << "Error: Missing value for 'methods' at line " << lineNum << std::endl;
+                    exit(EXIT_FAILURE);
                 }
                 std::istringstream iss(val);
                 std::string method;
                 while (iss >> method)
                 {
+                    if (!method.empty() && method[method.size() - 1] == ';')
+                        method = method.substr(0, method.size() - 1);
+                    
+                    currentLoc.methods.insert(method);
+
                     if (method == "GET")
                         currentLoc.allow_get = true;
                     else if (method == "POST")

@@ -9,11 +9,11 @@ std::string intToString(int n) {
     return oss.str();
 }
 
-bool isRequestComplete(const char *buffer, size_t length) 
+size_t getRequestLength(const char *buffer, size_t length) 
 {
     if (length < 4)
     {
-        return false;
+        return 0;
     }
     //for windows
     long headers_end = -1;
@@ -27,7 +27,7 @@ bool isRequestComplete(const char *buffer, size_t length)
     }
     if (headers_end == -1)
     {
-        return false; // headers not complete yet
+        return 0; // headers not complete yet
     }
 
     // Parse headers to determine body expectations
@@ -43,16 +43,29 @@ bool isRequestComplete(const char *buffer, size_t length)
             te[i] = tolower(te[i]);
         if (te.find("chunked") != std::string::npos) 
         {
+            // Check if the zero chunk is right at the beginning of the body (empty body case)
+            if (req.size() >= (size_t)headers_end + 5 && req.compare((size_t)headers_end, 5, "0\r\n\r\n") == 0)
+            {
+                return (size_t)headers_end + 5;
+            }
+            // Lenient check for LF only
+            if (req.size() >= (size_t)headers_end + 4 && req.compare((size_t)headers_end, 4, "0\n\n") == 0)
+            {
+                return (size_t)headers_end + 4;
+            }
+
             // For chunked, request complete when we see \r\n0\r\n\r\n after headers
             const std::string terminator = "\r\n0\r\n\r\n";
-            if (req.find(terminator, (size_t)headers_end) != std::string::npos)
+            size_t termPos = req.find(terminator, (size_t)headers_end);
+            if (termPos != std::string::npos)
             {
-                return true;
+                return termPos + terminator.size();
             }
             // Some clients might send final chunk with LF only (rare) -> be lenient
-            if (req.find("\n0\n\n", (size_t)headers_end) != std::string::npos)
-                return true;
-            return false;
+            termPos = req.find("\n0\n\n", (size_t)headers_end);
+            if (termPos != std::string::npos)
+                return termPos + 5; // \n0\n\n is 5 chars
+            return 0;
         }
     }
 
@@ -65,10 +78,12 @@ bool isRequestComplete(const char *buffer, size_t length)
         if (bodyLen < 0)
             bodyLen = 0;
         size_t total_needed = (size_t)headers_end + (size_t)bodyLen;
-        return length >= total_needed;
+        if (length >= total_needed)
+            return total_needed;
+        return 0;
     }
     // No Content-Length and no chunked: assume no body (e.g., GET without body)
-    return true;
+    return (size_t)headers_end;
 }
 
 std::string buildErrorResponse(int code, const std::string &message) 

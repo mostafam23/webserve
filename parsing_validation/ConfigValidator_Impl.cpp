@@ -400,11 +400,6 @@ bool ConfigValidator::validateDirective(const std::string &line, int lineNum, bo
     }
     else if (directive == "index")
     {
-        if (inLocation)
-        {
-            printError("'index' directive not allowed in location block", lineNum);
-            return false;
-        }
         std::string idx;
         if (!(iss >> idx))
         {
@@ -474,6 +469,20 @@ bool ConfigValidator::validateDirective(const std::string &line, int lineNum, bo
         if (!(iss >> ext))
         {
             printError("'cgi_extension' directive missing extension", lineNum);
+            return false;
+        }
+    }
+    else if (directive == "cgi_pass")
+    {
+        if (!inLocation)
+        {
+            printError("'cgi_pass' directive only allowed in location block", lineNum);
+            return false;
+        }
+        std::string path;
+        if (!(iss >> path))
+        {
+            printError("'cgi_pass' directive missing path", lineNum);
             return false;
         }
     }
