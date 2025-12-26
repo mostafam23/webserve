@@ -45,6 +45,7 @@ int App::run(int argc, char* argv[]) {
     try {
         servers = src->buildServers();
     } catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
         return 1;
     }
 

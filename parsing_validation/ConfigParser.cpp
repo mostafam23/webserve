@@ -4,6 +4,13 @@
 #include <sstream>
 #include <cstdlib>
 #include <iostream>
+#include <stdexcept>
+
+static void throwError(const std::string& msg, int lineNum) {
+    std::ostringstream oss;
+    oss << "Error: " << msg << " at line " << lineNum;
+    throw std::runtime_error(oss.str());
+}
 
 ConfigParser::ConfigParser(const std::string &file)
 {
@@ -34,7 +41,7 @@ Server ConfigParser::parseServer()
     if (!file.is_open())
     {
         std::cerr << "Error: Cannot open config file: " << filename << std::endl;
-        exit(EXIT_FAILURE);
+        throwError("Cannot open config file", 0);
     }
 
     std::string line;
@@ -73,9 +80,7 @@ Server ConfigParser::parseServer()
             }
             else
             {
-                std::cerr << "Error: Unexpected text after 'server' at line " << lineNum
-                          << ": \"" << afterServer << "\"" << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Unexpected text after 'server'", lineNum);
             }
         }
 
@@ -91,9 +96,7 @@ Server ConfigParser::parseServer()
         // Check for semicolons
         if (lineRequiresSemicolon(line) && line[line.size() - 1] != ';')
         {
-            std::cerr << "Error: Missing semicolon at line " << lineNum
-                      << ": \"" << line << "\"" << std::endl;
-            exit(EXIT_FAILURE);
+            throwError("Missing semicolon", lineNum);
         }
 
         if (line == "}" || line.find("}") == 0)
@@ -135,14 +138,12 @@ Server ConfigParser::parseServer()
 
                 if (server.listen <= 0 || server.listen > 65535)
                 {
-                    std::cerr << "Error: Invalid port number at line " << lineNum << std::endl;
-                    exit(EXIT_FAILURE);
+                    throwError("Invalid port number", lineNum);
                 }
             }
             else
             {
-                std::cerr << "Error: Missing value for 'listen' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'listen'", lineNum);
             }
         }
         else if (line.find("host") == 0)
@@ -150,8 +151,7 @@ Server ConfigParser::parseServer()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'host' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'host'", lineNum);
             }
             server.host = val;
         }
@@ -160,8 +160,7 @@ Server ConfigParser::parseServer()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'max_size' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'max_size'", lineNum);
             }
             server.max_size = val;
         }
@@ -170,8 +169,7 @@ Server ConfigParser::parseServer()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'server_name' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'server_name'", lineNum);
             }
             server.server_name = val;
         }
@@ -180,8 +178,7 @@ Server ConfigParser::parseServer()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'root' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'root'", lineNum);
             }
             server.root = val;
         }
@@ -190,8 +187,7 @@ Server ConfigParser::parseServer()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'index' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'index'", lineNum);
             }
             server.index = val;
         }
@@ -205,8 +201,7 @@ Server ConfigParser::parseServer()
 
             if (value.empty())
             {
-                std::cerr << "Error: Missing value for 'error_page' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'error_page'", lineNum);
             }
 
             if (!value.empty() && value[value.size() - 1] == ';')
@@ -223,8 +218,7 @@ Server ConfigParser::parseServer()
             std::string path = getValue(line);
             if (path.empty())
             {
-                std::cerr << "Error: Missing path for 'location' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing path for 'location'", lineNum);
             }
             currentLoc.path = path;
 
@@ -252,15 +246,13 @@ Server ConfigParser::parseServer()
                 }
                 else
                 {
-                    std::cerr << "Error: Expected '{' after 'location' at line " << lineNum << std::endl;
-                    exit(EXIT_FAILURE);
+                    throwError("Expected '{' after 'location'", lineNum);
                 }
             }
 
             if (!foundBrace)
             {
-                std::cerr << "Error: Expected '{' after 'location' but reached end of file" << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Expected '{' after 'location' but reached end of file", lineNum);
             }
         }
         else if (inLocation && line.find("methods") == 0)
@@ -281,9 +273,7 @@ Server ConfigParser::parseServer()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'root' in location block at line "
-                          << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'root' in location block", lineNum);
             }
             currentLoc.root = val;
         }
@@ -292,9 +282,7 @@ Server ConfigParser::parseServer()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'index' in location block at line "
-                          << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'index' in location block", lineNum);
             }
             currentLoc.index = val;
         }
@@ -307,9 +295,7 @@ Server ConfigParser::parseServer()
                 currentLoc.autoindex = false;
             else
             {
-                std::cerr << "Error: Invalid value for 'autoindex' at line " << lineNum
-                          << ". Expected 'on' or 'off'." << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Invalid value for 'autoindex'. Expected 'on' or 'off'", lineNum);
             }
         }
         else if (inLocation && line.find("return") == 0)
@@ -322,8 +308,7 @@ Server ConfigParser::parseServer()
 
             if (url.empty())
             {
-                std::cerr << "Error: Invalid return directive at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Invalid return directive", lineNum);
             }
             if (!url.empty() && url[url.size() - 1] == ';')
                 url = url.substr(0, url.size() - 1);
@@ -335,9 +320,7 @@ Server ConfigParser::parseServer()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'cgi_extension' at line "
-                          << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'cgi_extension'", lineNum);
             }
             // Split by space to allow multiple extensions
             std::istringstream iss(val);
@@ -353,18 +336,14 @@ Server ConfigParser::parseServer()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'upload_path' at line "
-                          << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'upload_path'", lineNum);
             }
             currentLoc.upload_path = val;
             std::cout << "[DEBUG] Parsed upload_path: " << val << " for location: " << currentLoc.path << std::endl;
         }
         else
         {
-            std::cerr << "Error: Unknown or misplaced directive at line " << lineNum
-                      << ": \"" << line << "\"" << std::endl;
-            exit(EXIT_FAILURE);
+            throwError("Unknown or misplaced directive", lineNum);
         }
     }
 
@@ -392,8 +371,7 @@ Servers ConfigParser::parseServers()
     std::ifstream file(filename.c_str());
     if (!file.is_open())
     {
-        std::cerr << "Error: Cannot open config file: " << filename << std::endl;
-        exit(EXIT_FAILURE);
+        throwError("Cannot open config file", 0);
     }
 
     std::string line;
@@ -435,9 +413,7 @@ Servers ConfigParser::parseServers()
             }
             else
             {
-                std::cerr << "Error: Unexpected text after 'server' at line " << lineNum
-                          << ": \"" << afterServer << "\"" << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Unexpected text after 'server'", lineNum);
             }
         }
 
@@ -453,9 +429,7 @@ Servers ConfigParser::parseServers()
         // Check for semicolons
         if (lineRequiresSemicolon(line) && line[line.size() - 1] != ';')
         {
-            std::cerr << "Error: Missing semicolon at line " << lineNum
-                      << ": \"" << line << "\"" << std::endl;
-            exit(EXIT_FAILURE);
+            throwError("Missing semicolon", lineNum);
         }
 
         if (line == "}" || line.find("}") == 0)
@@ -509,14 +483,12 @@ Servers ConfigParser::parseServers()
 
                 if (currentServer.listen <= 0 || currentServer.listen > 65535)
                 {
-                    std::cerr << "Error: Invalid port number at line " << lineNum << std::endl;
-                    exit(EXIT_FAILURE);
+                    throwError("Invalid port number", lineNum);
                 }
             }
             else
             {
-                std::cerr << "Error: Missing value for 'listen' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'listen'", lineNum);
             }
         }
         else if (line.find("max_size") == 0)
@@ -524,8 +496,7 @@ Servers ConfigParser::parseServers()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'max_size' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'max_size'", lineNum);
             }
             currentServer.max_size = val;
         }
@@ -534,8 +505,7 @@ Servers ConfigParser::parseServers()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'server_name' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'server_name'", lineNum);
             }
             currentServer.server_name = val;
         }
@@ -544,8 +514,7 @@ Servers ConfigParser::parseServers()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'root' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'root'", lineNum);
             }
             currentServer.root = val;
         }
@@ -554,8 +523,7 @@ Servers ConfigParser::parseServers()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'index' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'index'", lineNum);
             }
             currentServer.index = val;
         }
@@ -564,8 +532,7 @@ Servers ConfigParser::parseServers()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'error_page' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'error_page'", lineNum);
             }
             size_t spacePos = val.find(' ');
             if (spacePos != std::string::npos)
@@ -576,8 +543,7 @@ Servers ConfigParser::parseServers()
             }
             else
             {
-                std::cerr << "Error: Invalid error_page format at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Invalid error_page format", lineNum);
             }
         }
         else if (line.find("location") == 0 && !inLocation)
@@ -585,8 +551,7 @@ Servers ConfigParser::parseServers()
             std::string val = getValue(line);
             if (val.empty())
             {
-                std::cerr << "Error: Missing value for 'location' at line " << lineNum << std::endl;
-                exit(EXIT_FAILURE);
+                throwError("Missing value for 'location'", lineNum);
             }
             currentLoc = Location();
             currentLoc.path = val;
@@ -602,8 +567,7 @@ Servers ConfigParser::parseServers()
                 std::string val = getValue(line);
                 if (val.empty())
                 {
-                    std::cerr << "Error: Missing value for 'methods' at line " << lineNum << std::endl;
-                    exit(EXIT_FAILURE);
+                    throwError("Missing value for 'methods'", lineNum);
                 }
                 std::istringstream iss(val);
                 std::string method;
@@ -622,8 +586,7 @@ Servers ConfigParser::parseServers()
                 std::string val = getValue(line);
                 if (val.empty())
                 {
-                    std::cerr << "Error: Missing value for 'root' at line " << lineNum << std::endl;
-                    exit(EXIT_FAILURE);
+                    throwError("Missing value for 'root'", lineNum);
                 }
                 currentLoc.root = val;
             }
@@ -632,8 +595,7 @@ Servers ConfigParser::parseServers()
                 std::string val = getValue(line);
                 if (val.empty())
                 {
-                    std::cerr << "Error: Missing value for 'cgi_extension' at line " << lineNum << std::endl;
-                    exit(EXIT_FAILURE);
+                    throwError("Missing value for 'cgi_extension'", lineNum);
                 }
                 // Split by space to allow multiple extensions
                 std::istringstream iss(val);
@@ -649,8 +611,7 @@ Servers ConfigParser::parseServers()
                 std::string val = getValue(line);
                 if (val.empty())
                 {
-                    std::cerr << "Error: Missing value for 'upload_path' at line " << lineNum << std::endl;
-                    exit(EXIT_FAILURE);
+                    throwError("Missing value for 'upload_path'", lineNum);
                 }
                 currentLoc.upload_path = val;
             }
@@ -667,8 +628,7 @@ Servers ConfigParser::parseServers()
                 std::string val = getValue(line);
                 if (val.empty())
                 {
-                    std::cerr << "Error: Missing value for 'index' at line " << lineNum << std::endl;
-                    exit(EXIT_FAILURE);
+                    throwError("Missing value for 'index'", lineNum);
                 }
                 currentLoc.index = val;
             }
