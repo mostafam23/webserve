@@ -4,9 +4,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <cstdio> // Added for tmpfile, fwrite, etc.
 
 #include <iostream>
 #include <sstream>
+#include <cerrno>
 
 // Helper to convert map to envp
 static char **createEnv(const std::map<std::string, std::string> &envMap)
@@ -28,30 +30,46 @@ std::string CgiHandler::executeCgi(const std::string &scriptPath, const std::str
 {
     (void)server;
     (void)loc;
-    int pipe_in[2];
-    int pipe_out[2];
-
-    if (pipe(pipe_in) < 0 || pipe(pipe_out) < 0)
+    
+    // Use a temporary file for the request body to avoid pipe deadlocks with large bodies
+    FILE* tmpIn = std::tmpfile();
+    if (!tmpIn)
     {
+        std::cerr << "Error: tmpfile() failed" << std::endl;
+        return "Status: 500 Internal Server Error\r\n\r\n";
+    }
+    
+    if (!body.empty()) {
+        std::fwrite(body.c_str(), 1, body.size(), tmpIn);
+    }
+    std::rewind(tmpIn);
+    int fdIn = fileno(tmpIn);
+
+    int pipe_out[2];
+    if (pipe(pipe_out) < 0)
+    {
+        std::fclose(tmpIn);
         return "Status: 500 Internal Server Error\r\n\r\n";
     }
 
     pid_t pid = fork();
     if (pid < 0)
     {
+        std::fclose(tmpIn);
+        close(pipe_out[0]);
+        close(pipe_out[1]);
         return "Status: 500 Internal Server Error\r\n\r\n";
     }
 
     if (pid == 0)
     {
         // Child process
-        dup2(pipe_in[0], STDIN_FILENO);
+        dup2(fdIn, STDIN_FILENO);
         dup2(pipe_out[1], STDOUT_FILENO);
 
-        close(pipe_in[0]);
-        close(pipe_in[1]);
         close(pipe_out[0]);
         close(pipe_out[1]);
+        // fclose(tmpIn); // Not strictly necessary as we exec, but good practice if we weren't
 
         // Prepare environment
         std::map<std::string, std::string> env;
@@ -64,6 +82,24 @@ std::string CgiHandler::executeCgi(const std::string &scriptPath, const std::str
         env["SERVER_PROTOCOL"] = "HTTP/1.1";
         env["GATEWAY_INTERFACE"] = "CGI/1.1";
         env["PATH_INFO"] = scriptPath;
+        env["REQUEST_URI"] = scriptPath; // Add REQUEST_URI
+        env["SCRIPT_NAME"] = scriptPath; // Add SCRIPT_NAME
+
+        // Pass HTTP headers as HTTP_ variables
+        for (std::map<std::string, std::string>::const_iterator it = headers.begin(); it != headers.end(); ++it) {
+            std::string key = it->first;
+            std::string val = it->second;
+            
+            // Convert key to uppercase and replace - with _
+            std::string envKey = "HTTP_";
+            for (size_t i = 0; i < key.size(); ++i) {
+                char c = key[i];
+                if (c == '-') c = '_';
+                else c = toupper(c);
+                envKey += c;
+            }
+            env[envKey] = val;
+        }
 
         char **envp = createEnv(env);
 
@@ -73,20 +109,25 @@ std::string CgiHandler::executeCgi(const std::string &scriptPath, const std::str
         {
             interpreter = "/usr/bin/php-cgi";
         }
+        else if (scriptPath.find(".bla") != std::string::npos)
+        {
+            interpreter = "./cgi_tester";
+        }
 
         const char *argv[] = {interpreter.c_str(), scriptPath.c_str(), NULL};
 
+        std::cerr << "[DEBUG] Executing CGI: " << interpreter << " " << scriptPath << std::endl;
+
         execve(argv[0], (char *const *)argv, envp);
+        std::cerr << "[ERROR] execve failed: " << strerror(errno) << std::endl;
         exit(1);
     }
     else
     {
         // Parent process
-        close(pipe_in[0]);
+        std::cerr << "[DEBUG] Parent waiting for CGI child (pid " << pid << ")..." << std::endl;
+        std::fclose(tmpIn); // This closes the temp file and deletes it
         close(pipe_out[1]);
-
-        write(pipe_in[1], body.c_str(), body.size());
-        close(pipe_in[1]);
 
         // Read output
         std::string output;
@@ -97,7 +138,10 @@ std::string CgiHandler::executeCgi(const std::string &scriptPath, const std::str
             output.append(buffer, n);
         }
         close(pipe_out[0]);
-        waitpid(pid, NULL, 0);
+        
+        int status;
+        waitpid(pid, &status, 0);
+        std::cerr << "[DEBUG] CGI child finished with status: " << status << std::endl;
 
         return output;
     }

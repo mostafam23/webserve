@@ -2,6 +2,7 @@
 #include <sstream>
 #include <iostream>
 #include <string>
+#include <cstdlib> // Added for strtol
 
 std::string intToString(int n) {
     std::ostringstream oss;
@@ -31,8 +32,9 @@ size_t getRequestLength(const char *buffer, size_t length)
     }
 
     // Parse headers to determine body expectations
-    std::string req(buffer, length);
-    std::map<std::string, std::string> headers = parseHeaders(req);
+    // Optimization: Only construct string for headers to avoid copying large body
+    std::string headerStr(buffer, headers_end);
+    std::map<std::string, std::string> headers = parseHeaders(headerStr);
 
     // Check for Transfer-Encoding: chunked
     std::map<std::string, std::string>::iterator it = headers.find("transfer-encoding");
@@ -44,27 +46,29 @@ size_t getRequestLength(const char *buffer, size_t length)
         if (te.find("chunked") != std::string::npos) 
         {
             // Check if the zero chunk is right at the beginning of the body (empty body case)
-            if (req.size() >= (size_t)headers_end + 5 && req.compare((size_t)headers_end, 5, "0\r\n\r\n") == 0)
+            if (length >= (size_t)headers_end + 5 && strncmp(buffer + headers_end, "0\r\n\r\n", 5) == 0)
             {
                 return (size_t)headers_end + 5;
             }
             // Lenient check for LF only
-            if (req.size() >= (size_t)headers_end + 4 && req.compare((size_t)headers_end, 4, "0\n\n") == 0)
+            if (length >= (size_t)headers_end + 4 && strncmp(buffer + headers_end, "0\n\n", 4) == 0)
             {
                 return (size_t)headers_end + 4;
             }
 
             // For chunked, request complete when we see \r\n0\r\n\r\n after headers
+            // We need to search in the body part
+            std::string bodyPart(buffer + headers_end, length - headers_end);
             const std::string terminator = "\r\n0\r\n\r\n";
-            size_t termPos = req.find(terminator, (size_t)headers_end);
+            size_t termPos = bodyPart.find(terminator);
             if (termPos != std::string::npos)
             {
-                return termPos + terminator.size();
+                return headers_end + termPos + terminator.size();
             }
             // Some clients might send final chunk with LF only (rare) -> be lenient
-            termPos = req.find("\n0\n\n", (size_t)headers_end);
+            termPos = bodyPart.find("\n0\n\n");
             if (termPos != std::string::npos)
-                return termPos + 5; // \n0\n\n is 5 chars
+                return headers_end + termPos + 5; // \n0\n\n is 5 chars
             return 0;
         }
     }
@@ -140,4 +144,31 @@ std::map<std::string, std::string> parseHeaders(const std::string &request) {
         }
     }
     return headers;
+}
+
+std::string unchunkBody(const std::string &body)
+{
+    std::string decoded;
+    size_t i = 0;
+    while (i < body.size())
+    {
+        size_t crlf = body.find("\r\n", i);
+        if (crlf == std::string::npos)
+            break;
+        
+        std::string hexLen = body.substr(i, crlf - i);
+        char *end;
+        long len = std::strtol(hexLen.c_str(), &end, 16);
+        
+        if (len == 0)
+            break; // Last chunk
+
+        i = crlf + 2;
+        if (i + len > body.size())
+            break; // Malformed or incomplete
+
+        decoded.append(body.substr(i, len));
+        i += len + 2; // Skip data + CRLF
+    }
+    return decoded;
 }
