@@ -339,7 +339,6 @@ Server ConfigParser::parseServer()
                 throwError("Missing value for 'upload_path'", lineNum);
             }
             currentLoc.upload_path = val;
-            std::cout << "[DEBUG] Parsed upload_path: " << val << " for location: " << currentLoc.path << std::endl;
         }
         else
         {
