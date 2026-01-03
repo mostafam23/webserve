@@ -24,7 +24,7 @@ private:
     bool validateServerBlock(size_t &idx);
     bool validateLocationBlock(size_t &idx);
     bool validateDirective(const std::string &line, int lineNum, bool inLocation);
-    bool checkDuplicateServerNames();
+    bool checkDuplicateServerConfigs();
     bool validateBlockDeclaration(const std::string &line, const std::string &blockType, 
                                    int lineNum, std::string &path);
 

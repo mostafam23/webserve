@@ -94,7 +94,7 @@ bool ConfigValidator::validate()
     if (!validateSyntax())
         return false;
 
-    if (!checkDuplicateServerNames())
+    if (!checkDuplicateServerConfigs())
         return false;
 
     return true;
@@ -547,7 +547,7 @@ bool ConfigValidator::validateDirective(const std::string &line, int lineNum, bo
     return true;
 }
 
-bool ConfigValidator::checkDuplicateServerNames()
+bool ConfigValidator::checkDuplicateServerConfigs()
 {
     std::set<std::string> serverConfigs; // Stores "port:server_name"
     bool inServer = false;
@@ -563,8 +563,10 @@ bool ConfigValidator::checkDuplicateServerNames()
             continue;
 
         // Track braces to know when server block ends
-        if (line.find("{") != std::string::npos) braceCount++;
-        if (line.find("}") != std::string::npos) braceCount--;
+        if (line.find("{") != std::string::npos)
+            braceCount++;
+        if (line.find("}") != std::string::npos)
+            braceCount--;
 
         if (line.find("server") == 0 && !inServer)
         {
@@ -681,6 +683,12 @@ bool ConfigValidator::validateBlockDeclaration(const std::string &line, const st
                 printError("Location directive missing path", lineNum);
                 return false;
             }
+
+            if (path.find_first_of(" \t") != std::string::npos)
+            {
+                printError("Invalid location path (contains whitespace): '" + path + "'", lineNum);
+                return false;
+            }
         }
         else
         {
@@ -724,12 +732,10 @@ bool ConfigValidator::validateBlockDeclaration(const std::string &line, const st
         else
         {
             // No brace on same line - this is OK!
-            // We'll look for it on the next line in validateSyntax()
             path = "";
             return true;
         }
     }
-
     return false;
 }
 

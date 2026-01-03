@@ -7,6 +7,7 @@ namespace {
     const char* C_INFO = "\033[36m";     // cyan
     const char* C_REQ  = "\033[35m";     // magenta
     const char* C_DEBUG = "\033[33m";    // yellow
+    const char* C_UPLOAD = "\033[32m";   // green
 }
 
 namespace Logger {
@@ -32,6 +33,10 @@ namespace Logger {
     void debug(const std::string &msg)
     {
         logColored(C_DEBUG, "[DEBUG]", msg);
+    }
+    void upload(const std::string &msg)
+    {
+        logColored(C_UPLOAD, "[UPLOAD]", msg);
     }
 }
 
