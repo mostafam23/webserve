@@ -72,7 +72,7 @@ Server ConfigParser::parseServer()
                 inServer = true;
                 continue;
             }
-            else if (afterServer == "{" || afterServer.find("{") == 0)
+            else if (afterServer == "{")
             {
                 // "server {" on same line
                 inServer = true;
@@ -99,7 +99,7 @@ Server ConfigParser::parseServer()
             throwError("Missing semicolon", lineNum);
         }
 
-        if (line == "}" || line.find("}") == 0)
+        if (line.find("}") == 0)
         {
             if (inLocation)
             {
@@ -134,11 +134,6 @@ Server ConfigParser::parseServer()
                 else
                 {
                     server.listen = atoi(val.c_str());
-                }
-
-                if (server.listen <= 0 || server.listen > 65535)
-                {
-                    throwError("Invalid port number", lineNum);
                 }
             }
             else
@@ -339,7 +334,6 @@ Server ConfigParser::parseServer()
                 throwError("Missing value for 'upload_path'", lineNum);
             }
             currentLoc.upload_path = val;
-            std::cout << "[DEBUG] Parsed upload_path: " << val << " for location: " << currentLoc.path << std::endl;
         }
         else
         {
@@ -348,18 +342,6 @@ Server ConfigParser::parseServer()
     }
 
     file.close();
-
-    if (server.listen == 0)
-    {
-        std::cerr << "Warning: 'listen' directive not found, using default port 8080" << std::endl;
-        server.listen = 8080;
-    }
-
-    if (server.root.empty())
-    {
-        std::cerr << "Warning: 'root' directive not found, using default './www'" << std::endl;
-        server.root = "./www";
-    }
 
     return server;
 }
@@ -419,20 +401,16 @@ Servers ConfigParser::parseServers()
 
         // If we're waiting for opening brace after server
         if (inServer && line == "{")
-        {
             continue;
-        }
 
         if (!inServer)
             continue;
 
         // Check for semicolons
         if (lineRequiresSemicolon(line) && line[line.size() - 1] != ';')
-        {
             throwError("Missing semicolon", lineNum);
-        }
 
-        if (line == "}" || line.find("}") == 0)
+        if (line.find("}") == 0)
         {
             if (inLocation)
             {
@@ -447,16 +425,6 @@ Servers ConfigParser::parseServers()
             {
                 inServer = false;
                 // Add completed server to servers collection
-                if (currentServer.listen <= 0 || currentServer.listen > 65535)
-                {
-                    std::cerr << "Warning: Invalid port number for server, using default 8080" << std::endl;
-                    currentServer.listen = 8080;
-                }
-                if (currentServer.root.empty())
-                {
-                    std::cerr << "Warning: 'root' directive not found for server, using default './www'" << std::endl;
-                    currentServer.root = "./www";
-                }
                 servers.addServer(currentServer);
                 continue;
             }
@@ -479,11 +447,6 @@ Servers ConfigParser::parseServers()
                 else
                 {
                     currentServer.listen = atoi(val.c_str());
-                }
-
-                if (currentServer.listen <= 0 || currentServer.listen > 65535)
-                {
-                    throwError("Invalid port number", lineNum);
                 }
             }
             else
@@ -652,34 +615,5 @@ Servers ConfigParser::parseServers()
         }
     }
 
-    // Handle case where file ends without closing server block
-    if (inServer)
-    {
-        std::cerr << "Warning: Unclosed server block at end of file" << std::endl;
-        if (currentServer.listen <= 0 || currentServer.listen > 65535)
-        {
-            std::cerr << "Warning: Invalid port number for server, using default 8080" << std::endl;
-            currentServer.listen = 8080;
-        }
-        if (currentServer.root.empty())
-        {
-            std::cerr << "Warning: 'root' directive not found for server, using default './www'" << std::endl;
-            currentServer.root = "./www";
-        }
-        servers.addServer(currentServer);
-    }
-
-    // If no servers were found, create a default server
-    if (servers.empty())
-    {
-        std::cerr << "Warning: No server blocks found in config file, using default server" << std::endl;
-        servers.addServer(Server());
-    }
-
     return servers;
-}
-
-std::string ConfigParser::getFilename() const
-{
-    return filename;
 }

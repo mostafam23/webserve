@@ -26,7 +26,6 @@ public:
     // ===== Core Functions =====
     Server parseServer();                // parses and builds Server struct
     Servers parseServers();              // parses multiple server blocks
-    std::string getFilename() const;     // returns config filename
 
     // ===== Static Validation =====
     static bool validateConfigFile(const std::string &filename);

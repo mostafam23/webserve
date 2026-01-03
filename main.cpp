@@ -7,10 +7,6 @@
 #include <iostream>
 #include <csignal>
 
-// =========================================================
-// ========================== MAIN ==========================
-// =========================================================
-
 int main(int argc, char *argv[]) {
     // Facade: App acts as the application controller/facade orchestrating subsystems
     App app;
