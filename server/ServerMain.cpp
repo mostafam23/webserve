@@ -744,10 +744,6 @@ int startServers(const Servers &servers)
                                     
                                     response += cgiOutput;
                                 }
-
-                                std::cout << "[DEBUG] CGI Output Start (first 200 bytes): " 
-                                          << cgiOutput.substr(0, 200) << "..." << std::endl;
-                                std::cout << "[DEBUG] Sending CGI response (" << response.size() << " bytes)" << std::endl;
                                 sendAll(fd, response);
                                 if (!client_wants_keepalive)
                                     toClose.push_back(fd);
@@ -756,17 +752,7 @@ int startServers(const Servers &servers)
                             }
                         }
 
-                        // Debug logging
-                        if (loc) {
-                            std::ostringstream oss;
-                            oss << "Method: " << method << ", Loc: " << loc->path 
-                                << ", UploadPath: '" << loc->upload_path << "'";
-                            Logger::debug(oss.str());
-                        } else {
-                            std::ostringstream oss;
-                            oss << "Method: " << method << ", Loc: NULL";
-                            Logger::debug(oss.str());
-                        }
+
 
                         // 5. Handle Uploads (POST)
                         if (method == "POST" && loc && !loc->upload_path.empty())
@@ -784,17 +770,27 @@ int startServers(const Servers &servers)
                             
                             std::string targetPath = joinPaths(loc->upload_path, filename);
                             
+                            std::ostringstream oss;
+                            oss << "Starting upload: " << filename << " -> " << targetPath;
+                            Logger::upload(oss.str());
+
                             std::ofstream outfile(targetPath.c_str(), std::ios::binary);
                             if (outfile.is_open())
                             {
                                 outfile.write(body.c_str(), body.size());
                                 outfile.close();
                                 
+                                Logger::upload("Upload successful: " + targetPath);
+
                                 std::string response = "HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
                                 sendAll(fd, response);
                             }
                             else
                             {
+                                std::ostringstream errOss;
+                                errOss << "Upload failed: " << targetPath << " (" << strerror(errno) << ")";
+                                Logger::upload(errOss.str());
+
                                 std::cerr << "Error: Failed to open file for writing: " << targetPath << " (" << strerror(errno) << std::endl;
                                 std::string error = buildErrorWithCustom(*target_server, 500, "Internal Server Error");
                                 sendAll(fd, error);
@@ -984,7 +980,7 @@ int startServers(const Servers &servers)
         }
     }
 
-    // Cleanup
+    //Cleanup
     std::cout << "\n[SHUTDOWN] Closing server sockets..." << std::endl;
     for (size_t i = 0; i < g_server_socks.size(); ++i)
     {

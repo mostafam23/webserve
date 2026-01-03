@@ -116,16 +116,12 @@ std::string CgiHandler::executeCgi(const std::string &scriptPath, const std::str
 
         const char *argv[] = {interpreter.c_str(), scriptPath.c_str(), NULL};
 
-        std::cerr << "[DEBUG] Executing CGI: " << interpreter << " " << scriptPath << std::endl;
-
         execve(argv[0], (char *const *)argv, envp);
-        std::cerr << "[ERROR] execve failed: " << strerror(errno) << std::endl;
         exit(1);
     }
     else
     {
         // Parent process
-        std::cerr << "[DEBUG] Parent waiting for CGI child (pid " << pid << ")..." << std::endl;
         std::fclose(tmpIn); // This closes the temp file and deletes it
         close(pipe_out[1]);
 
@@ -141,7 +137,6 @@ std::string CgiHandler::executeCgi(const std::string &scriptPath, const std::str
         
         int status;
         waitpid(pid, &status, 0);
-        std::cerr << "[DEBUG] CGI child finished with status: " << status << std::endl;
 
         return output;
     }
