@@ -11,11 +11,12 @@ private:
     std::vector<std::string> lines;
 
     // Helper functions
-    std::string trim(const std::string &str);
     bool isValidPort(int port);
     bool isValidPath(const std::string &path);
     bool isValidMethod(const std::string &method);
     bool isValidErrorCode(int code);
+    bool isValidHost(const std::string &host);
+    bool checkExtraArguments(std::istringstream &iss, const std::string &directiveName, int lineNum);
     void printError(const std::string &msg, int lineNum = -1);
     
     // Validation functions

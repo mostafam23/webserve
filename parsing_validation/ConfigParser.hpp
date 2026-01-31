@@ -15,7 +15,6 @@ private:
     std::string filename;
 
     // ===== Helper functions =====
-    std::string trim(const std::string &str);
     std::string getValue(const std::string &line);
     bool lineRequiresSemicolon(const std::string &line);  // ✅ NEW: check if a line must end with ';'
 
@@ -24,7 +23,6 @@ public:
     ConfigParser(const std::string &filename);
 
     // ===== Core Functions =====
-    Server parseServer();                // parses and builds Server struct
     Servers parseServers();              // parses multiple server blocks
 
     // ===== Static Validation =====

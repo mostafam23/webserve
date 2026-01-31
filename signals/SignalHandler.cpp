@@ -11,10 +11,8 @@ void signalHandler(int signum) {
     g_shutdown = 1;
     
     // Close all server sockets
-    
     for (size_t i = 0; i < g_server_socks.size(); ++i) {
         if (g_server_socks[i] != -1) {
-            std::cout << "hello" << std::endl;
             close(g_server_socks[i]);
             g_server_socks[i] = -1;
         }

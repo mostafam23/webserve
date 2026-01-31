@@ -1,14 +1,16 @@
 #include "CgiHandler.hpp"
+#include "../utils/Utils.hpp"
 #include <unistd.h>
 #include <sys/wait.h>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
-#include <cstdio> // Added for tmpfile, fwrite, etc.
-
+#include <fcntl.h>
 #include <iostream>
 #include <sstream>
 #include <cerrno>
+#include <csignal>
+#include <ctime>
 
 // Helper to convert map to envp
 static char **createEnv(const std::map<std::string, std::string> &envMap)
@@ -19,53 +21,81 @@ static char **createEnv(const std::map<std::string, std::string> &envMap)
     {
         std::string s = it->first + "=" + it->second;
         env[i] = new char[s.size() + 1];
-        std::strcpy(env[i], s.c_str());
+        ft_strcpy(env[i], s.c_str());
         i++;
     }
     env[i] = NULL;
     return env;
 }
 
-std::string CgiHandler::executeCgi(const std::string &scriptPath, const std::string &method, const std::string &query, const std::string &body, const std::map<std::string, std::string> &headers, const Server &server, const Location &loc)
+CgiSession CgiHandler::startCgi(const std::string &scriptPath, const std::string &method, const std::string &query, const std::string &body, const std::map<std::string, std::string> &headers, int clientFd)
 {
-    (void)server;
-    (void)loc;
-    
+    CgiSession session;
+    session.clientFd = clientFd;
+    session.pid = -1;
+    session.pipeOut = -1;
+    session.startTime = time(NULL);
+
     // Use a temporary file for the request body to avoid pipe deadlocks with large bodies
-    FILE* tmpIn = std::tmpfile();
-    if (!tmpIn)
+    char temp_path[256];
+    int fdIn = ft_file_open_temp(temp_path);
+    if (fdIn < 0)
     {
-        std::cerr << "Error: tmpfile() failed" << std::endl;
-        return "Status: 500 Internal Server Error\r\n\r\n";
+        std::cerr << "Error: ft_file_open_temp() failed" << std::endl;
+        return session;
     }
-    
-    if (!body.empty()) {
-        std::fwrite(body.c_str(), 1, body.size(), tmpIn);
+
+    if (!body.empty())
+    {
+        const char *ptr = body.c_str();
+        size_t remaining = body.size();
+        ssize_t n;
+        while (remaining > 0)
+        {
+            n = write(fdIn, ptr, remaining);
+            if (n > 0)
+            {
+                ptr += n;
+                remaining -= n;
+            }
+            else if (n == 0)
+            {
+                break;
+            }
+            else
+            {
+                break;
+            }
+        }
     }
-    std::rewind(tmpIn);
-    int fdIn = fileno(tmpIn);
+    ft_file_close(fdIn);
+    fdIn = open("/tmp/webserv_temp", O_RDONLY);
+    if (fdIn < 0)
+    {
+        return session;
+    }
 
     int pipe_out[2];
     if (pipe(pipe_out) < 0)
     {
-        std::fclose(tmpIn);
-        return "Status: 500 Internal Server Error\r\n\r\n";
+        ft_file_close(fdIn);
+        return session;
     }
 
     pid_t pid = fork();
     if (pid < 0)
     {
-        std::fclose(tmpIn);
+        ft_file_close(fdIn);
         close(pipe_out[0]);
         close(pipe_out[1]);
-        return "Status: 500 Internal Server Error\r\n\r\n";
+        return session;
     }
 
     if (pid == 0)
     {
         // Child process
-        dup2(fdIn, STDIN_FILENO);
-        dup2(pipe_out[1], STDOUT_FILENO);
+        dup2(fdIn, STDIN_FILENO);         // it reads from the temp file instead of stdin(keyboard);
+        dup2(pipe_out[1], STDOUT_FILENO); // it writes to the pipe instead of stdout(screen);
 
         close(pipe_out[0]);
         close(pipe_out[1]);
@@ -86,16 +116,20 @@ std::string CgiHandler::executeCgi(const std::string &scriptPath, const std::str
         env["SCRIPT_NAME"] = scriptPath; // Add SCRIPT_NAME
 
         // Pass HTTP headers as HTTP_ variables
-        for (std::map<std::string, std::string>::const_iterator it = headers.begin(); it != headers.end(); ++it) {
+        for (std::map<std::string, std::string>::const_iterator it = headers.begin(); it != headers.end(); ++it)
+        {
             std::string key = it->first;
             std::string val = it->second;
-            
+
             // Convert key to uppercase and replace - with _
             std::string envKey = "HTTP_";
-            for (size_t i = 0; i < key.size(); ++i) {
+            for (size_t i = 0; i < key.size(); ++i)
+            {
                 char c = key[i];
-                if (c == '-') c = '_';
-                else c = toupper(c);
+                if (c == '-')
+                    c = '_';
+                else
+                    c = toupper(c);
                 envKey += c;
             }
             env[envKey] = val;
@@ -109,35 +143,30 @@ std::string CgiHandler::executeCgi(const std::string &scriptPath, const std::str
         {
             interpreter = "/usr/bin/php-cgi";
         }
-        else if (scriptPath.find(".bla") != std::string::npos)
-        {
-            interpreter = "./cgi_tester";
-        }
 
         const char *argv[] = {interpreter.c_str(), scriptPath.c_str(), NULL};
 
         execve(argv[0], (char *const *)argv, envp);
+        // If execve returns, it failed - write error to pipe
+        const char *error_msg = "Status: 500 Internal Server Error\r\n\r\n";
+        write(pipe_out[1], error_msg, 36);
+        close(pipe_out[1]);
+        close(pipe_out[0]);
+        ft_file_close(fdIn);
+        // Child process ends here - return ends the forked child process
         exit(1);
     }
-    else
-    {
-        // Parent process
-        std::fclose(tmpIn); // This closes the temp file and deletes it
-        close(pipe_out[1]);
 
-        // Read output
-        std::string output;
-        char buffer[4096];
-        ssize_t n;
-        while ((n = read(pipe_out[0], buffer, sizeof(buffer))) > 0)
-        {
-            output.append(buffer, n);
-        }
-        close(pipe_out[0]);
-        
-        int status;
-        waitpid(pid, &status, 0);
+    // Parent process
+    ft_file_close(fdIn);
+    close(pipe_out[1]); // Close write end
 
-        return output;
-    }
+    session.pid = pid;
+    session.pipeOut = pipe_out[0];
+
+    // Set pipe to non-blocking
+    int flags = fcntl(pipe_out[0], F_GETFL, 0);
+    fcntl(pipe_out[0], F_SETFL, flags | O_NONBLOCK);
+
+    return session;
 }

@@ -3,9 +3,8 @@ CXXFLAGS = -Wall -Wextra -Werror -std=c++98
 
 SRCS = main.cpp \
        parsing_validation/ConfigParser.cpp \
-	   parsing_validation/ConfigParser_Utils.cpp \
+	parsing_validation/ConfigParser_Utils.cpp \
        parsing_validation/ConfigValidator.cpp \
-       parsing_validation/ConfigValidator_Impl.cpp \
        logging/Logger.cpp \
        signals/SignalHandler.cpp \
        client_services/ClientRegistry.cpp \
@@ -13,8 +12,7 @@ SRCS = main.cpp \
        utils/Utils.cpp \
        server/ServerMain.cpp \
        server/CgiHandler.cpp \
-       app/App.cpp \
-       app/ArgValidation.cpp
+       app/App.cpp
 
 OBJS = $(SRCS:.cpp=.o)
 

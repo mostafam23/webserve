@@ -1,13 +1,5 @@
 #include "ConfigParser.hpp"
-
-std::string ConfigParser::trim(const std::string &str)
-{
-    size_t first = str.find_first_not_of(" \t\r\n");
-    size_t last = str.find_last_not_of(" \t\r\n");
-    if (first == std::string::npos)
-        return "";
-    return str.substr(first, last - first + 1);
-}
+#include "../utils/Utils.hpp"
 
 std::string ConfigParser::getValue(const std::string &line)
 {
@@ -19,14 +11,14 @@ std::string ConfigParser::getValue(const std::string &line)
     if (start == std::string::npos)
         return "";
 
-    std::string val = line.substr(start);
+    std::string val = ft_substr(line, start);
     val = trim(val);
 
     if (!val.empty() && val[val.length() - 1] == ';')
-        val = val.substr(0, val.length() - 1);
+        val = ft_substr(val, 0, val.length() - 1);
 
     if (!val.empty() && val[val.length() - 1] == '{')
-        val = val.substr(0, val.length() - 1);
+        val = ft_substr(val, 0, val.length() - 1);
 
     return trim(val);
 }

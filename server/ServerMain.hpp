@@ -3,7 +3,6 @@
 
 #include "../parsing_validation/ConfigStructs.hpp"
 
-int startServer(const Server &server);
 int startServers(const Servers &servers);
 
-#endif // SERVER_MAIN_HPP
+#endif

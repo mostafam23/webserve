@@ -23,8 +23,15 @@
 #include <algorithm>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <dirent.h>
 #include <signal.h>
+#include <sys/epoll.h>
+
+// Globals for non-blocking I/O
+static std::map<int, std::string> g_sendBuf;
+static std::set<int> g_closing_clients;
+static std::map<int, CgiSession> cgi_sessions; // pipe_out -> session
 
 // Minimal IPv4 parser: accepts dotted-quad "A.B.C.D" and fills in_addr
 static bool parseIPv4(const std::string &s, in_addr *out)
@@ -35,19 +42,19 @@ static bool parseIPv4(const std::string &s, in_addr *out)
     if (!p || !*p)
         return false;
 
-    a = std::strtoul(p, &end, 10);
+    a = ft_strtoul(p, &end, 10);
     if (end == p || *end != '.')
         return false;
     p = end + 1;
-    b = std::strtoul(p, &end, 10);
+    b = ft_strtoul(p, &end, 10);
     if (end == p || *end != '.')
         return false;
     p = end + 1;
-    c = std::strtoul(p, &end, 10);
+    c = ft_strtoul(p, &end, 10);
     if (end == p || *end != '.')
         return false;
     p = end + 1;
-    d = std::strtoul(p, &end, 10);
+    d = ft_strtoul(p, &end, 10);
     if (end == p || *end != '\0')
         return false;
     if (a > 255 || b > 255 || c > 255 || d > 255)
@@ -141,7 +148,7 @@ static std::string joinPaths(const std::string &a, const std::string &b)
     if (a[a.size() - 1] == '/')
     {
         if (b[0] == '/')
-            return a + b.substr(1);
+            return a + ft_substr(b, 1);
         return a + b;
     }
     if (b[0] == '/')
@@ -154,7 +161,7 @@ static bool isMethodAllowed(const Location *loc, const std::string &method)
     if (!loc)
         return true; // no restriction
     if (loc->methods.empty())
-        return true; // Example:location /images { root /var/www/img; }, No “allow” or “methods” defined → GET, POST, etc. are all allowed.
+        return false;
     // What does .find() return? If the method exists → it returns an iterator pointing to that element.
     // If the method does NOT exist → it returns end() iterator.
     return loc->methods.find(method) != loc->methods.end();
@@ -175,10 +182,12 @@ static const Location *matchLocation(const Server &server, const std::string &pa
             continue;
 
         // Handle extension matching (e.g. *.bla)
-        if (lp[0] == '*' && lp.size() > 1) {
-            std::string ext = lp.substr(1); // remove *
-            if (path.size() >= ext.size() && 
-                path.compare(path.size() - ext.size(), ext.size(), ext) == 0) {
+        if (lp[0] == '*' && lp.size() > 1)
+        {
+            std::string ext = ft_substr(lp, 1); // remove *
+            if (path.size() >= ext.size() &&
+                path.compare(path.size() - ext.size(), ext.size(), ext) == 0)
+            {
                 suffixMatch = &loc;
             }
         }
@@ -193,15 +202,19 @@ static const Location *matchLocation(const Server &server, const std::string &pa
     }
 
     // 1. If Suffix allows method, it wins.
-    if (suffixMatch && isMethodAllowed(suffixMatch, method)) return suffixMatch;
-    
+    if (suffixMatch && isMethodAllowed(suffixMatch, method))
+        return suffixMatch;
+
     // 2. If Prefix allows method, it wins (since Suffix didn't allow it).
-    if (prefixMatch && isMethodAllowed(prefixMatch, method)) return prefixMatch;
-    
+    if (prefixMatch && isMethodAllowed(prefixMatch, method))
+        return prefixMatch;
+
     // 3. If neither allows method, who wins?
     // Usually Suffix has higher priority in Nginx regex vs prefix.
-    if (suffixMatch) return suffixMatch;
-    if (prefixMatch) return prefixMatch;
+    if (suffixMatch)
+        return suffixMatch;
+    if (prefixMatch)
+        return prefixMatch;
 
     return 0;
 }
@@ -239,27 +252,10 @@ static std::string buildErrorWithCustom(const Server &server, int code, const st
     return resp.str();
 }
 
-static void sendAll(int fd, const std::string& data) {
-    size_t totalSent = 0;
-    const char* ptr = data.c_str();
-    size_t len = data.size();
-
-    while (totalSent < len) {
-        ssize_t sent = send(fd, ptr + totalSent, len - totalSent, 0);
-        if (sent == -1) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // Wait for socket to be writable
-                fd_set writefds;
-                FD_ZERO(&writefds);
-                FD_SET(fd, &writefds);
-                select(fd + 1, NULL, &writefds, NULL, NULL); // Blocking wait
-                continue;
-            }
-            perror("send");
-            break;
-        }
-        totalSent += sent;
-    }
+static void sendAll(int fd, const std::string &data)
+{
+    if (!data.empty())
+        g_sendBuf[fd].append(data);
 }
 
 int startServers(const Servers &servers)
@@ -284,7 +280,7 @@ int startServers(const Servers &servers)
         int server_sock = socket(AF_INET, SOCK_STREAM, 0);
         if (server_sock < 0)
         {
-            perror("socket");
+            ft_perror("socket");
             // Close previously created sockets
             for (size_t j = 0; j < g_server_socks.size(); ++j)
             {
@@ -300,21 +296,16 @@ int startServers(const Servers &servers)
         setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
         sockaddr_in addr;
-        std::memset(&addr, 0, sizeof(addr));
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(server.listen);
+        ft_memset(&addr, 0, sizeof(addr));
+        addr.sin_family = AF_INET;            // this socket address uses the IPv4 address family
+        addr.sin_port = htons(server.listen); // Convert port number to network byte order
 
-        if (!server.host.empty())
-        {
-            if (!parseIPv4(server.host, &addr.sin_addr))
-                addr.sin_addr.s_addr = htonl(INADDR_ANY);
-        }
-        else
+        if (!parseIPv4(server.host, &addr.sin_addr))
             addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
-        if (bind(server_sock, (sockaddr *)&addr, sizeof(addr)) < 0)
+        if (bind(server_sock, (sockaddr *)&addr, sizeof(addr)) < 0) // bind the socket to the specified IP and port
         {
-            perror("bind");
+            ft_perror("bind");
             close(server_sock);
             // Close previously created sockets
             for (size_t j = 0; j < g_server_socks.size(); ++j)
@@ -323,10 +314,9 @@ int startServers(const Servers &servers)
             }
             return EXIT_FAILURE;
         }
-
-        if (listen(server_sock, 128) < 0)
+        if (listen(server_sock, 4096) < 0)
         {
-            perror("listen");
+            ft_perror("listen");
             close(server_sock);
             // Close previously created sockets
             for (size_t j = 0; j < g_server_socks.size(); ++j)
@@ -351,278 +341,405 @@ int startServers(const Servers &servers)
     std::map<int, int> reqCount;
     std::set<int> clients;
 
+    // Create epoll instance
+    int epoll_fd = epoll_create1(0);
+    if (epoll_fd == -1)
+    {
+        ft_perror("epoll_create1");
+        for (size_t j = 0; j < g_server_socks.size(); ++j)
+        {
+            close(g_server_socks[j]);
+        }
+        return EXIT_FAILURE;
+    }
+
+    // Add all server sockets to epoll
+    for (size_t i = 0; i < g_server_socks.size(); ++i)
+    {
+        if (g_server_socks[i] != -1)
+        {
+            struct epoll_event ev;
+            ev.events = EPOLLIN;
+            ev.data.fd = g_server_socks[i];
+            if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, g_server_socks[i], &ev) == -1)
+            {
+                ft_perror("epoll_ctl: server socket");
+                close(epoll_fd);
+                for (size_t j = 0; j < g_server_socks.size(); ++j)
+                {
+                    close(g_server_socks[j]);
+                }
+                return EXIT_FAILURE;
+            }
+        }
+    }
+
+    const int MAX_EVENTS = 1024;
+    struct epoll_event events[MAX_EVENTS];
+
     while (!g_shutdown)
     {
-        fd_set readfds; // fd_set is a data structure used by the select() system call to keep track of a group of file descriptors (FDs) that we want to monitor.
-        // Think of it like a list/collection of sockets that you tell Linux to “watch”.
-        // So fd_set = “a set of sockets to check”.
-        FD_ZERO(&readfds); // FD_ZERO initializes/clears the fd_set.Because each time before calling select(), you must prepare a fresh set of sockets to watch.
-        // If you don’t clear it, it may contain old data → undefined behavior.
-
-        int maxfd = -1;
-
-        // Add all server sockets to select set
-        for (size_t i = 0; i < g_server_socks.size(); ++i)
-        {
-            if (g_server_socks[i] != -1)
-            {
-                FD_SET(g_server_socks[i], &readfds);
-                if (g_server_socks[i] > maxfd)
-                {
-                    maxfd = g_server_socks[i];
-                }
-            }
-        }
-
-        // Add all client sockets to select set
-        for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it)
-        {
-            FD_SET(*it, &readfds);
-            if (*it > maxfd)
-            {
-                maxfd = *it;
-            }
-        }
-
-        if (maxfd == -1)
-        {
-            // No valid file descriptors
-            break;
-        }
-
-        timeval tv;
-        tv.tv_sec = 1;
-        tv.tv_usec = 0;
-
-        int ready = select(maxfd + 1, &readfds, NULL, NULL, &tv);
-        if (ready < 0)
-        {
-            if (errno == EINTR)
-            {
-                continue;
-            }
-            perror("select");
-            break;
-        }
-
-        // Check for new connections on any server socket
-        for (size_t i = 0; i < g_server_socks.size(); ++i)
-        {
-            // New connections
-            // when a server socket is ready to read yaany a new client is ready to connect
-            // if (FD_ISSET(3, &readfds)) { ... }  // is server socket ready? 3 yaany server-socket
-            /*
-            ✅ A new client is connecting
-            ❗ Not when a client sends data
-            ❗ Not when server wants to write
-            ✅ Only when a new TCP connection request arrives
-            */
-            if (g_server_socks[i] != -1 && FD_ISSET(g_server_socks[i], &readfds))
-            {
-                sockaddr_in client_addr; // Creates a structure to store the connecting client’s IP and port
-                socklen_t client_len = sizeof(client_addr);
-
-                for (;;)
-                {
-                    // why inifinte loop? Because the server accepts clients as many as possible until no more pending connections remain.
-                    int client_sock = accept(g_server_socks[i], (sockaddr *)&client_addr, &client_len);
-                    if (client_sock < 0)
-                    {
-                        if (errno == EAGAIN) // No more clients waiting to connect now.
-                            break;
-                        if (errno == EINTR) // Interrupt signal occurred (example: Ctrl+C or OS signal).Try again → continue;
-                            continue;
-                        perror("accept");
-                        break;
-                    }
-
-                    setNonBlocking(client_sock); // future recv() or send() do not block the server remains responsive(saree3 l estijaba)
-                    clients.insert(client_sock);
-                    recvBuf[client_sock] = std::string();
-                    reqCount[client_sock] = 0;
-                    addClient(client_sock, i + 1);
-                }
-            }
-        }
-
-        // Handle readable clients (same logic as original)
-        std::vector<int> toClose;
+        // Update epoll interest for clients with pending writes
         for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it)
         {
             int fd = *it;
-            // when there is a connection for a client but no request yet
-            if (!FD_ISSET(fd, &readfds))
+            struct epoll_event ev;
+            ev.data.fd = fd;
+            ev.events = EPOLLIN;
+            if (!g_sendBuf[fd].empty())
+                ev.events |= EPOLLOUT;
+            epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev);
+        }
+
+        int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 1000);
+        if (nfds < 0)
+        {
+            if (errno == EINTR) // control + c
+                continue;
+
+            ft_perror("epoll_wait");
+            break;
+        }
+
+        // Process events
+        for (int ev_idx = 0; ev_idx < nfds; ++ev_idx)
+        {
+            int fd = events[ev_idx].data.fd;
+            
+            // Check if this is a server socket
+            bool is_server_sock = false;
+            size_t server_idx = 0;
+            for (size_t i = 0; i < g_server_socks.size(); ++i)
             {
+                if (g_server_socks[i] == fd)
+                {
+                    is_server_sock = true;
+                    server_idx = i;
+                    break;
+                }
+            }
+
+            // Handle new connections on server socket
+            if (is_server_sock && (events[ev_idx].events & EPOLLIN))
+            {
+                sockaddr_in client_addr;
+                socklen_t client_len = sizeof(client_addr);
+
+                // Accept all pending connections
+                int accepted = 0;
+                while (true)
+                {
+                    // Throttle: If we have too many clients, stop accepting
+                    if (clients.size() >= 10000)
+                    {
+                        break;
+                    }
+
+                    int client_sock = accept(fd, (sockaddr *)&client_addr, &client_len);
+                    if (client_sock < 0)
+                    {
+                        // No more connections pending or error
+                        break;
+                    }
+
+                    setNonBlocking(client_sock);
+                    
+                    // Add client to epoll
+                    struct epoll_event ev;
+                    ev.events = EPOLLIN;
+                    ev.data.fd = client_sock;
+                    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_sock, &ev) == -1)
+                    {
+                        ft_perror("epoll_ctl: client socket");
+                        close(client_sock);
+                        break;
+                    }
+
+                    clients.insert(client_sock);
+                    recvBuf[client_sock] = std::string();
+                    reqCount[client_sock] = 0;
+                    addClient(client_sock, server_idx + 1);
+
+                    // Limit acceptance to prevent starvation
+                    accepted++;
+                    if (accepted > 500)
+                        break;
+                }
+                continue;
+            }
+        }
+
+        // Handle CGI timeouts
+        std::vector<int> cgiToClose;
+        for (std::map<int, CgiSession>::iterator it = cgi_sessions.begin(); it != cgi_sessions.end(); ++it)
+        {
+            int pipeFd = it->first;
+            CgiSession &session = it->second;
+            
+            if (time(NULL) - session.startTime >= 5)
+            {
+                kill(session.pid, SIGKILL);
+                waitpid(session.pid, NULL, 0);
+                std::string body = "<html><head><title>508 Loop Detected</title></head><body><h1>508 Loop Detected</h1><p>The CGI script took too long to execute.</p></body></html>";
+                std::ostringstream ss;
+                ss << "HTTP/1.1 508 Loop Detected\r\n"
+                   << "Content-Type: text/html\r\n"
+                   << "Content-Length: " << body.size() << "\r\n"
+                   << "Connection: close\r\n\r\n"
+                   << body;
+                std::string response = ss.str();
+                sendAll(session.clientFd, response);
+                if (!session.keepAlive)
+                    g_closing_clients.insert(session.clientFd);
+                cgiToClose.push_back(pipeFd);
+            }
+        }
+
+        for (size_t i = 0; i < cgiToClose.size(); ++i)
+        {
+            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, cgiToClose[i], NULL);
+            close(cgiToClose[i]);
+            cgi_sessions.erase(cgiToClose[i]);
+        }
+
+        // Process all events
+        std::vector<int> toClose;
+        for (int n = 0; n < nfds; ++n)
+        {
+            int fd = events[n].data.fd;
+            
+            // Skip if server socket (already handled)
+            bool is_server_sock = false;
+            for (size_t i = 0; i < g_server_socks.size(); ++i)
+            {
+                if (g_server_socks[i] == fd)
+                {
+                    is_server_sock = true;
+                    break;
+                }
+            }
+            if (is_server_sock)
+                continue;
+
+            // Handle CGI pipe output
+            if (cgi_sessions.find(fd) != cgi_sessions.end() && (events[n].events & EPOLLIN))
+            {
+                CgiSession &session = cgi_sessions[fd];
+                int pipeFd = fd;
+                char buffer[4096];
+                ssize_t n_read = read(pipeFd, buffer, sizeof(buffer));
+                if (n_read > 0)
+                {
+                    session.responseBuffer.append(buffer, n_read);
+                }
+                else
+                {
+                    // EOF or Error
+                    int status;
+                    waitpid(session.pid, &status, 0);
+
+                    std::string response;
+                    if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+                    {
+                        response = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n";
+                    }
+                    else if (WIFSIGNALED(status))
+                    {
+                        response = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n";
+                    }
+                    else
+                    {
+                        std::string cgiOutput = session.responseBuffer;
+                        if (cgiOutput.find("HTTP/") == 0)
+                        {
+                            response = cgiOutput;
+                        }
+                        else
+                        {
+                            response = "HTTP/1.1 200 OK\r\n";
+                            bool hasContentLength = false;
+                            std::string lowerCgi = ft_substr(cgiOutput, 0, 1024);
+                            for (size_t i = 0; i < lowerCgi.size(); ++i)
+                                lowerCgi[i] = ft_tolower(lowerCgi[i]);
+
+                            if (lowerCgi.find("content-length:") != std::string::npos)
+                            {
+                                hasContentLength = true;
+                            }
+
+                            if (!hasContentLength)
+                            {
+                                size_t bodyPos = cgiOutput.find("\r\n\r\n");
+                                size_t headerEndLen = 4;
+                                if (bodyPos == std::string::npos)
+                                {
+                                    bodyPos = cgiOutput.find("\n\n");
+                                    headerEndLen = 2;
+                                }
+
+                                size_t bodySize = 0;
+                                if (bodyPos != std::string::npos)
+                                {
+                                    bodySize = cgiOutput.size() - (bodyPos + headerEndLen);
+                                }
+                                std::ostringstream oss;
+                                oss << "Content-Length: " << bodySize << "\r\n";
+                                response += oss.str();
+                            }
+                            response += cgiOutput;
+                        }
+                    }
+                    sendAll(session.clientFd, response);
+                    if (!session.keepAlive)
+                        g_closing_clients.insert(session.clientFd);
+                    
+                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, pipeFd, NULL);
+                    close(pipeFd);
+                    cgi_sessions.erase(pipeFd);
+                }
                 continue;
             }
 
-            char buffer[65536]; // Increased buffer size for better performance
-            for (;;)
+            // Skip if CGI pipe (already handled)
+            if (cgi_sessions.find(fd) != cgi_sessions.end())
+                continue;
+
+            // Handle client read events
+            if (clients.find(fd) != clients.end() && (events[n].events & EPOLLIN))
             {
-                ssize_t n = recv(fd, buffer, sizeof(buffer), 0); // 0 in the last argument to make the recv works normally wohtout options
-                if (n > 0)
+                char buffer[65536];
+            // Read only once per select event to avoid errno usage
+            ssize_t n = recv(fd, buffer, sizeof(buffer), 0); // 0 in the last argument to make the recv works normally wohtout options
+            if (n > 0)
+            {
+                recvBuf[fd].append(buffer, n);
+
+                while (true)
                 {
-                    recvBuf[fd].append(buffer, n);
-                    
-                    // Process all complete requests in the buffer
-                    while (true)
+                    size_t reqLen = getRequestLength(recvBuf[fd].c_str(), recvBuf[fd].size());
+                    if (reqLen == 0)
+                        break;
+
+                    std::string request = ft_substr(recvBuf[fd], 0, reqLen);
+                    recvBuf[fd] = ft_substr(recvBuf[fd], reqLen);
+                    reqCount[fd]++;
+                    std::istringstream iss(request);
+                    std::string method, path, version;
+                    iss >> method >> path >> version;
+
+                    std::string queryString = "";
+                    size_t qPos = path.find('?');
+                    if (qPos != std::string::npos)
                     {
-                        size_t reqLen = getRequestLength(recvBuf[fd].c_str(), recvBuf[fd].size());
-                        if (reqLen == 0)
-                            break; // Request not complete yet
+                        queryString = ft_substr(path, qPos + 1);
+                        path = ft_substr(path, 0, qPos);
+                    }
 
-                        // Extract the complete request
-                        std::string request = recvBuf[fd].substr(0, reqLen);
-                        // Remove processed request from buffer
-                        recvBuf[fd] = recvBuf[fd].substr(reqLen);
+                    if (method.empty() || path.empty() || version.empty())
+                    {
+                        std::string error = buildErrorResponse(400, "Invalid request");
+                        sendAll(fd, error);
+                        g_closing_clients.insert(fd);
+                        break;
+                    }
 
-                        reqCount[fd]++;
-                        std::istringstream iss(request);
-                        std::string method, path, version;
-                        iss >> method >> path >> version;
+                    std::map<std::string, std::string> headers = parseHeaders(request);
 
-                        std::string queryString = "";
-                        size_t qPos = path.find('?');
-                        if (qPos != std::string::npos)
+                    Server *target_server = NULL;
+                    for (size_t s = 0; s < servers.count(); ++s)
+                    {
+                        if (servers.servers[s].listen == ntohs(server_addrs[s].sin_port))
                         {
-                            queryString = path.substr(qPos + 1);
-                            path = path.substr(0, qPos);
-                        }
-
-                        if (method.empty() || path.empty() || version.empty())
-                        {
-                            std::string error = buildErrorResponse(400, "Invalid request");
-                            sendAll(fd, error);
-                            toClose.push_back(fd);
+                            target_server = const_cast<Server *>(&servers.servers[s]);
                             break;
                         }
-
-                        std::map<std::string, std::string> headers = parseHeaders(request);
-
-                        // Find which server handled this request based on port
-                        Server *target_server = NULL;
-                        for (size_t s = 0; s < servers.count(); ++s)
-                        {
-                            if (servers.servers[s].listen == ntohs(server_addrs[s].sin_port))
-                            {
-                                target_server = const_cast<Server *>(&servers.servers[s]);
-                                break;
-                            }
-                        }
-                        if (!target_server)
-                        {
-                            target_server = const_cast<Server *>(&servers.servers[0]);
-                        }
-
-                        /*
-                        HTTP Connection Header Summary
-                        ------------------------------
-                        HTTP/1.0:
-                        - Default: connection closes after each response.
-                        - Connection: close      -> Explicit close (same as default).
-                        - Connection: keep-alive -> Try persistent connection (non-standard extension).
-                        - Connection: blabla     -> Unknown token; connection closes.
-
-                        HTTP/1.1:
-                        - Default: connection stays open (persistent).
-                        - Connection: keep-alive -> Redundant; connection stays open.
-                        - Connection: close      -> Server must close after the response.
-                        - Connection: blabla     -> ignore → connection stays open.
-                        */
-                        bool client_wants_keepalive = true;
-                        if (headers.find("connection") != headers.end())
-                        {
-                            std::string conn = headers["connection"];
-                            for (size_t i = 0; i < conn.size(); ++i)
-                                conn[i] = tolower(conn[i]);
-                            if (conn == "close")
-                                client_wants_keepalive = false;
-                        }
-                        if (version == "HTTP/1.0" && headers["connection"] != "Keep-Alive")
+                    }
+                    if (!target_server)
+                    {
+                        target_server = const_cast<Server *>(&servers.servers[0]);
+                    }
+                    bool client_wants_keepalive = true;
+                    if (headers.find("connection") != headers.end())
+                    {
+                        std::string conn = headers["connection"];
+                        for (size_t i = 0; i < conn.size(); ++i)
+                            conn[i] = ft_tolower(conn[i]);
+                        if (conn == "close")
                             client_wants_keepalive = false;
-                        // Log request
-                        std::ostringstream rlog;
-                        int server_num = getClientServer(fd);
-                        rlog << "[REQUEST #" << reqCount[fd] << "] Client " << fd;
-                        if (server_num > 0)
-                        {
-                            rlog << " (Server " << server_num << "): ";
-                        }
-                        else
-                        {
-                            rlog << ": ";
-                        }
-                        rlog << method << " " << path << " " << version
-                             << (client_wants_keepalive ? " (keep-alive)" : " (close)");
-                        Logger::request(rlog.str());
-                        // Routing: match location, enforce methods, resolve root and path
-                        const Location *loc = matchLocation(*target_server, path, method);
+                    }
+                    if (version == "HTTP/1.0" && headers["connection"] != "Keep-Alive")
+                        client_wants_keepalive = false;
+                    // Log request
+                    // std::ostringstream rlog;
+                    // int server_num = getClientServer(fd);
+                    // rlog << "[REQUEST #" << reqCount[fd] << "] Client " << fd;
+                    // if (server_num > 0)
+                    // {
+                    //    rlog << " (Server " << server_num << "): ";
+                    // }
+                    // else
+                    // {
+                    //    rlog << ": ";
+                    // }
+                    // rlog << method << " " << path << " " << version
+                    //     << (client_wants_keepalive ? " (keep-alive)" : " (close)");
+                    // Logger::request(rlog.str());
+                    // Routing: match location, enforce methods, resolve root and path
+                    const Location *loc = matchLocation(*target_server, path, method);
 
-                        // 1. Handle Redirection
-                        if (loc && loc->redirect.first != 0)
+                    // Check Max Body Size
+                    if (headers.count("content-length"))
+                    {
+                        long cl = ft_atol(headers["content-length"].c_str());
+                        long max = parseSize(target_server->max_size);
+                        // Only enforce the limit if max > 0. A value of 0 means "no limit".
+                        if (max > 0 && cl > max)
                         {
-                            std::ostringstream resp;
-                            resp << "HTTP/1.1 " << loc->redirect.first << " Found\r\n"
-                                 << "Location: " << loc->redirect.second << "\r\n"
-                                 << "Content-Length: 0\r\n"
-                                 << "Connection: close\r\n\r\n";
-                            std::string response = resp.str();
-                            sendAll(fd, response);
-                            toClose.push_back(fd);
-                            break;
-                        }
-
-                        // 2. Check Max Body Size
-                        if (headers.count("content-length"))
-                        {
-                            long cl = std::atol(headers["content-length"].c_str());
-                            long max = parseSize(target_server->max_size);
-                            // Only enforce the limit if max > 0. A value of 0 means "no limit".
-                            if (max > 0 && cl > max)
-                            {
-                                std::string error = buildErrorWithCustom(*target_server, 413, "Payload Too Large");
-                                sendAll(fd, error);
-                                toClose.push_back(fd);
-                                break;
-                            }
-                        }
-
-                        std::string effectiveRoot;
-                        if (loc && !loc->root.empty())
-                        {
-                            effectiveRoot = loc->root;
-                        }
-                        else
-                        {
-                            effectiveRoot = target_server->root;
-                        }
-                        std::string safePath = sanitizePath(path);
-                        if (!isMethodAllowed(loc, method))
-                        {
-                            std::string error = buildErrorWithCustom(*target_server, 405, "Method Not Allowed");
+                            std::string error = buildErrorWithCustom(*target_server, 413, "Payload Too Large");
                             sendAll(fd, error);
-                            client_wants_keepalive = false;
-                            toClose.push_back(fd);
+                            g_closing_clients.insert(fd);
                             break;
                         }
-                        std::string fullPath = effectiveRoot + safePath;
+                    }
 
-                        // 3. Handle Directory & Autoindex
-                        if (isDirectory(fullPath))
+                    std::string effectiveRoot;
+                    if (loc && !loc->root.empty())
+                    {
+                        effectiveRoot = loc->root;
+                    }
+                    else
+                    {
+                        effectiveRoot = target_server->root;
+                    }
+                    std::string safePath = sanitizePath(path);
+                    if (!isMethodAllowed(loc, method))
+                    {
+                        std::string error = buildErrorWithCustom(*target_server, 405, "Method Not Allowed");
+                        sendAll(fd, error);
+                        client_wants_keepalive = false;
+                        g_closing_clients.insert(fd);
+                        break;
+                    }
+                    std::string fullPath = effectiveRoot + safePath;
+
+                    // 3. Handle Directory & Autoindex
+                    if (isDirectory(fullPath))
+                    {
+                        if (!fullPath.empty() && fullPath[fullPath.size() - 1] != '/')
+                            fullPath += "/";
+
+                        std::string indexFile = (loc && !loc->index.empty()) ? loc->index : target_server->index;
+                        std::string indexPath = fullPath + indexFile;
+
+                        std::ifstream f(indexPath.c_str());
+                        if (f.good())
                         {
-                            if (!fullPath.empty() && fullPath[fullPath.size() - 1] != '/')
-                                fullPath += "/";
-
-                            std::string indexFile = (loc && !loc->index.empty()) ? loc->index : target_server->index;
-                            std::string indexPath = fullPath + indexFile;
-
-                            std::ifstream f(indexPath.c_str());
-                            if (f.good())
-                            {
-                                fullPath = indexPath;
-                                f.close();
-                            }
-                            else if (loc && loc->autoindex)
+                            fullPath = indexPath;
+                            f.close();
+                        }
+                        else if (method == "GET")
+                        {
+                            if (loc && loc->autoindex)
                             {
                                 std::string listing = generateDirectoryListing(fullPath, path);
                                 std::ostringstream resp;
@@ -635,50 +752,71 @@ int startServers(const Servers &servers)
                                 std::string response = resp.str();
                                 sendAll(fd, response);
                                 if (!client_wants_keepalive)
-                                    toClose.push_back(fd);
-                                // recvBuf[fd].clear(); // Don't clear, we might have more requests
+                                    g_closing_clients.insert(fd);
                                 continue;
                             }
                             else
                             {
-                                // Directory without index and without autoindex -> 403 Forbidden usually, or let it fail as 404
-                                // Tester expects 404 for /directory/Yeah which has no index file
+                                // Directory without index and without autoindex -> 404
                                 std::string error = buildErrorWithCustom(*target_server, 404, "Not Found");
                                 sendAll(fd, error);
                                 if (!client_wants_keepalive)
-                                    toClose.push_back(fd);
-                                // recvBuf[fd].clear();
+                                    g_closing_clients.insert(fd);
                                 continue;
                             }
-                        };
+                        }
+                    };
 
-                        // 4. Handle CGI
-                        if (loc && !loc->cgi_extensions.empty())
+                    // 4. Handle CGI
+                    if (loc && !loc->cgi_extensions.empty())
+                    {
+                        bool isCgi = false;
+                        for (size_t i = 0; i < loc->cgi_extensions.size(); ++i)
                         {
-                            bool isCgi = false;
-                            for (size_t i = 0; i < loc->cgi_extensions.size(); ++i) {
-                                const std::string& ext = loc->cgi_extensions[i];
-                                size_t extPos = fullPath.rfind(ext);
-                                if (extPos != std::string::npos && extPos == fullPath.size() - ext.size()) {
-                                    isCgi = true;
-                                    break;
-                                }
-                            }
-
-                            if (isCgi)
+                            const std::string &ext = loc->cgi_extensions[i];
+                            size_t extPos = fullPath.rfind(ext);
+                            if (extPos != std::string::npos && extPos == fullPath.size() - ext.size())
                             {
+                                isCgi = true;
+                                break;
+                            }
+                        }
+
+                        if (isCgi)
+                        {
+                            // If it's a POST request and the file doesn't exist, we treat it as a file upload/creation
+                            // instead of trying to execute a non-existent script.
+                            // If it's a DELETE request, we want to delete the file, not execute it.
+                            if ((method == "POST" && access(fullPath.c_str(), F_OK) == -1) || method == "DELETE")
+                            {
+                                // Loop will continue to generic POST handler below
+                            }
+                            else
+                            {
+                                if (access(fullPath.c_str(), F_OK) == -1)
+                                {
+                                    std::string error = buildErrorWithCustom(*target_server, 404, "Not Found");
+                                    sendAll(fd, error);
+                                    if (!client_wants_keepalive)
+                                        g_closing_clients.insert(fd);
+                                    continue;
+                                }
+
                                 std::string body = "";
                                 size_t bodyPos = request.find("\r\n\r\n");
                                 if (bodyPos != std::string::npos)
                                 {
-                                    body = request.substr(bodyPos + 4);
+                                    body = ft_substr(request, bodyPos + 4);
                                 }
 
                                 // Handle Chunked Encoding for CGI
-                                if (headers.count("transfer-encoding")) {
+                                if (headers.count("transfer-encoding"))
+                                {
                                     std::string te = headers["transfer-encoding"];
-                                    for(size_t i=0; i<te.size(); ++i) te[i] = tolower(te[i]);
-                                    if (te.find("chunked") != std::string::npos) {
+                                    for (size_t i = 0; i < te.size(); ++i)
+                                        te[i] = ft_tolower(te[i]);
+                                    if (te.find("chunked") != std::string::npos)
+                                    {
                                         body = unchunkBody(body);
                                         std::ostringstream ss;
                                         ss << body.size();
@@ -686,292 +824,260 @@ int startServers(const Servers &servers)
                                         headers.erase("transfer-encoding");
                                     }
                                 }
-                                
+
                                 // Handle special headers test case (X-Secret-Header-For-Test)
-                                // The tester sends a special header that the CGI script might expect or react to.
-                                // We need to ensure all headers are passed to the CGI.
                                 // (Already done in executeCgi via headers map)
 
-                                std::string cgiOutput = CgiHandler::executeCgi(fullPath, method, queryString, body, headers, *target_server, *loc);
-
-                                std::string response;
-                                if (cgiOutput.find("HTTP/") == 0)
+                                CgiSession session = CgiHandler::startCgi(fullPath, method, queryString, body, headers, fd);
+                                if (session.pipeOut != -1)
                                 {
-                                    response = cgiOutput;
+                                    session.keepAlive = client_wants_keepalive;
+                                    
+                                    // Add CGI pipe to epoll
+                                    struct epoll_event ev;
+                                    ev.events = EPOLLIN;
+                                    ev.data.fd = session.pipeOut;
+                                    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, session.pipeOut, &ev) != -1)
+                                    {
+                                        cgi_sessions[session.pipeOut] = session;
+                                    }
+                                    else
+                                    {
+                                        close(session.pipeOut);
+                                        kill(session.pid, SIGKILL);
+                                        waitpid(session.pid, NULL, 0);
+                                        std::string error = buildErrorWithCustom(*target_server, 500, "Internal Server Error");
+                                        sendAll(fd, error);
+                                        if (!client_wants_keepalive)
+                                            g_closing_clients.insert(fd);
+                                    }
+                                    continue;
                                 }
                                 else
                                 {
-                                    response = "HTTP/1.1 200 OK\r\n";
-                                    
-                                    // Check if Content-Length header is missing
-                                    // We do a simple check. For a robust server, we should parse headers properly.
-                                    bool hasContentLength = false;
-                                    std::string lowerCgi = cgiOutput.substr(0, 1024); // Check first 1KB for headers
-                                    for(size_t i=0; i<lowerCgi.size(); ++i) lowerCgi[i] = tolower(lowerCgi[i]);
-                                    
-                                    if (lowerCgi.find("content-length:") != std::string::npos) {
-                                        hasContentLength = true;
-                                    }
-
-                                    if (!hasContentLength) {
-                                        size_t bodyPos = cgiOutput.find("\r\n\r\n");
-                                        size_t headerEndLen = 4;
-                                        if (bodyPos == std::string::npos) {
-                                            bodyPos = cgiOutput.find("\n\n");
-                                            headerEndLen = 2;
-                                        }
-
-                                        size_t bodySize = 0;
-                                        if (bodyPos != std::string::npos) {
-                                            bodySize = cgiOutput.size() - (bodyPos + headerEndLen);
-                                        } else {
-                                            // No headers found? Assume everything is body? 
-                                            // Or maybe everything is headers?
-                                            // Usually CGI must return headers. If no double-newline, maybe it's all body (invalid CGI) or all headers (incomplete).
-                                            // Let's assume if no headers separator, it's malformed, but we can try to send it as is.
-                                            // But we need a content-length.
-                                            // If we assume it's all body, we need to prepend \r\n\r\n? No.
-                                            // Let's just calculate size of the whole thing if we can't find headers?
-                                            // No, that's risky.
-                                            // Let's log this case.
-                                            std::cerr << "[WARN] CGI output has no header separator!" << std::endl;
-                                        }
-                                        
-                                        std::ostringstream oss;
-                                        oss << "Content-Length: " << bodySize << "\r\n";
-                                        response += oss.str();
-                                    }
-                                    
-                                    response += cgiOutput;
+                                    std::string error = buildErrorWithCustom(*target_server, 500, "Internal Server Error");
+                                    sendAll(fd, error);
+                                    if (!client_wants_keepalive)
+                                        g_closing_clients.insert(fd);
+                                    continue;
                                 }
-                                sendAll(fd, response);
-                                if (!client_wants_keepalive)
-                                    toClose.push_back(fd);
-                                // recvBuf[fd].clear();
-                                continue;
                             }
                         }
-
-
-
-                        // 5. Handle Uploads (POST)
-                        if (method == "POST" && loc && !loc->upload_path.empty())
+                    }
+                    // 6. Handle DELETE
+                    if (method == "DELETE")
+                    {
+                        if (ft_remove(fullPath.c_str()) == 0)
                         {
-                            std::string body = "";
-                            size_t bodyPos = request.find("\r\n\r\n");
-                            if (bodyPos != std::string::npos)
-                                body = request.substr(bodyPos + 4);
-                            
-                            // Extract filename from path
-                            std::string filename = "uploaded_file";
-                            size_t lastSlash = path.find_last_of('/');
-                            if (lastSlash != std::string::npos && lastSlash + 1 < path.size())
-                                filename = path.substr(lastSlash + 1);
-                            
-                            std::string targetPath = joinPaths(loc->upload_path, filename);
-                            
-                            std::ostringstream oss;
-                            oss << "Starting upload: " << filename << " -> " << targetPath;
-                            Logger::upload(oss.str());
-
-                            std::ofstream outfile(targetPath.c_str(), std::ios::binary);
-                            if (outfile.is_open())
+                            std::ostringstream ss;
+                            ss << "HTTP/1.1 204 No Content\r\n";
+                            ss << "Content-Length: 0\r\n";
+                            ss << (client_wants_keepalive ? "Connection: keep-alive\r\n" : "Connection: close\r\n");
+                            ss << "\r\n";
+                            sendAll(fd, ss.str());
+                        }
+                        else
+                        {
+                            if (access(fullPath.c_str(), F_OK) == -1)
                             {
-                                outfile.write(body.c_str(), body.size());
-                                outfile.close();
-                                
-                                Logger::upload("Upload successful: " + targetPath);
-
-                                std::string response = "HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-                                sendAll(fd, response);
-                            }
-                            else
-                            {
-                                std::ostringstream errOss;
-                                errOss << "Upload failed: " << targetPath << " (" << strerror(errno) << ")";
-                                Logger::upload(errOss.str());
-
-                                std::cerr << "Error: Failed to open file for writing: " << targetPath << " (" << strerror(errno) << std::endl;
-                                std::string error = buildErrorWithCustom(*target_server, 500, "Internal Server Error");
+                                std::string error = buildErrorWithCustom(*target_server, 404, "Not Found");
                                 sendAll(fd, error);
                             }
-                            
-                            if (!client_wants_keepalive)
-                                toClose.push_back(fd);
-                            // recvBuf[fd].clear();
-                            continue;
-                        }
-
-                        // 6. Handle DELETE
-                        if (method == "DELETE")
-                        {
-                            if (std::remove(fullPath.c_str()) == 0)
-                            {
-                                std::string response = "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-                                sendAll(fd, response);
-                            }
                             else
                             {
-                                if (access(fullPath.c_str(), F_OK) == -1) {
-                                     std::string error = buildErrorWithCustom(*target_server, 404, "Not Found");
-                                     sendAll(fd, error);
-                                } else {
-                                     std::string error = buildErrorWithCustom(*target_server, 403, "Forbidden");
-                                     sendAll(fd, error);
-                                }
-                            }
-                            if (!client_wants_keepalive)
-                                toClose.push_back(fd);
-                            // recvBuf[fd].clear();
-                            continue;
-                        }
-
-                        std::string contentType = "text/html";
-                        size_t dot = fullPath.find_last_of('.');
-                        if (dot != std::string::npos)
-                        {
-                            std::string ext = fullPath.substr(dot);
-                            if (ext == ".css")
-                                contentType = "text/css";
-                            else if (ext == ".js")
-                                contentType = "application/javascript";
-                            else if (ext == ".json")
-                                contentType = "application/json";
-                            else if (ext == ".png")
-                                contentType = "image/png";
-                            else if (ext == ".jpg" || ext == ".jpeg")
-                                contentType = "image/jpeg";
-                            else if (ext == ".gif")
-                                contentType = "image/gif";
-                            else if (ext == ".ico")
-                                contentType = "image/x-icon";
-                        }
-
-                        std::string response;
-
-                        if (method == "GET")
-                        {
-                            std::ifstream f(fullPath.c_str(), std::ios::binary);
-                            if (f)
-                            {
-                                std::string body((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-                                response = "HTTP/1.1 200 OK\r\n";
-                                response += "Content-Type: " + contentType + "\r\n";
-                                response += "Content-Length: " + intToString((int)body.size()) + "\r\n";
-                                if (client_wants_keepalive)
-                                    response += "Connection: keep-alive\r\n";
-                                else
-                                    response += "Connection: close\r\n";
-                                response += "\r\n";
-                                response += body;
-                            }
-                            else
-                            {
-                                response = buildErrorWithCustom(*target_server, 404, "Not Found");
-                                client_wants_keepalive = false;
-                            }
-                        }
-                        else if (method == "POST")
-                        {
-                            // Simple POST handler that creates/updates the file
-                            
-                            struct stat st;
-                            if (stat(fullPath.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
-                                // It's a directory. We can't write to it as a file.
-                                std::string error = buildErrorWithCustom(*target_server, 405, "Method Not Allowed");
+                                std::string error = buildErrorWithCustom(*target_server, 403, "Forbidden");
                                 sendAll(fd, error);
-                                client_wants_keepalive = false;
-                                toClose.push_back(fd);
-                                break;
-                            }
-
-                            std::ofstream out(fullPath.c_str(), std::ios::binary);
-                            if (out)
-                            {
-                                // Get the request body (simplified - in real case, parse Content-Length and read body properly)
-                                size_t body_pos = request.find("\r\n\r\n");
-                                if (body_pos != std::string::npos)
-                                {
-                                    std::string body = request.substr(body_pos + 4);
-                                    out << body;
-                                    response = "HTTP/1.1 200 OK\r\n";
-                                    response += "Content-Type: text/plain\r\n";
-                                    response += "Content-Length: 0\r\n";
-                                    response += client_wants_keepalive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
-                                    response += "\r\n";
-                                }
-                                else
-                                {
-                                    response = buildErrorWithCustom(*target_server, 400, "Bad Request");
-                                    client_wants_keepalive = false;
-                                }
-                            }
-                            else
-                            {
-                                std::cerr << "Error: Failed to open file for writing (generic POST): " << fullPath << " (" << strerror(errno) << ")" << std::endl;
-                                response = buildErrorWithCustom(*target_server, 500, "Internal Server Error");
-                                client_wants_keepalive = false;
                             }
                         }
-                        else if (method == "DELETE")
+                        if (!client_wants_keepalive)
+                            g_closing_clients.insert(fd);
+                        // recvBuf[fd].clear();
+                        continue;
+                    }
+
+                    std::string contentType = "text/html";
+                    size_t dot = fullPath.find_last_of('.');
+                    if (dot != std::string::npos)
+                    {
+                        std::string ext = ft_substr(fullPath, dot);
+                        if (ext == ".css")
+                            contentType = "text/css";
+                        else if (ext == ".js")
+                            contentType = "application/javascript";
+                        else if (ext == ".json")
+                            contentType = "application/json";
+                        else if (ext == ".png")
+                            contentType = "image/png";
+                        else if (ext == ".jpg" || ext == ".jpeg")
+                            contentType = "image/jpeg";
+                        else if (ext == ".gif")
+                            contentType = "image/gif";
+                        else if (ext == ".ico")
+                            contentType = "image/x-icon";
+                    }
+
+                    std::string response;
+
+                    if (method == "GET")
+                    {
+                        std::ifstream f(fullPath.c_str(), std::ios::binary);
+                        if (f)
                         {
-                            if (std::remove(fullPath.c_str()) == 0)
+                            std::string body((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+                            response = "HTTP/1.1 200 OK\r\n";
+                            response += "Content-Type: " + contentType + "\r\n";
+                            response += "Content-Length: " + intToString((int)body.size()) + "\r\n";
+                            if (client_wants_keepalive)
+                                response += "Connection: keep-alive\r\n";
+                            else
+                                response += "Connection: close\r\n";
+                            response += "\r\n";
+                            response += body;
+                        }
+                        else
+                        {
+                            response = buildErrorWithCustom(*target_server, 404, "Not Found");
+                            client_wants_keepalive = false;
+                        }
+                        sendAll(fd, response);
+                        if (!client_wants_keepalive)
+                        {
+                            g_closing_clients.insert(fd);
+                            break;
+                        }
+                    }
+                    else if (method == "POST")
+                    {
+                        // Simple POST handler that creates/updates the file
+
+                        struct stat st;
+                        if (stat(fullPath.c_str(), &st) == 0 && S_ISDIR(st.st_mode))
+                        {
+                            // It's a directory. We can't write to it as a file.
+                            std::string error = buildErrorWithCustom(*target_server, 405, "Method Not Allowed");
+                            sendAll(fd, error);
+                            client_wants_keepalive = false;
+                            toClose.push_back(fd);
+                            break;
+                        }
+
+                        std::ofstream out(fullPath.c_str(), std::ios::binary);
+                        if (out)
+                        {
+                            // Get the request body (simplified - in real case, parse Content-Length and read body properly)
+                            size_t body_pos = request.find("\r\n\r\n");
+                            if (body_pos != std::string::npos)
                             {
+                                std::string body = ft_substr(request, body_pos + 4);
+                                if (headers.count("transfer-encoding"))
+                                {
+                                    std::string te = headers["transfer-encoding"];
+                                    for (size_t i = 0; i < te.size(); ++i)
+                                        te[i] = ft_tolower(te[i]);
+                                    if (te.find("chunked") != std::string::npos)
+                                    {
+                                        body = unchunkBody(body);
+                                    }
+                                }
+                                out << body;
                                 response = "HTTP/1.1 200 OK\r\n";
-                                response += "Content-Type: application/json\r\n";
+                                response += "Content-Type: text/plain\r\n";
                                 response += "Content-Length: 0\r\n";
                                 response += client_wants_keepalive ? "Connection: keep-alive\r\n" : "Connection: close\r\n";
                                 response += "\r\n";
                             }
                             else
                             {
-                                response = buildErrorWithCustom(*target_server, 404, "Not Found");
+                                response = buildErrorWithCustom(*target_server, 400, "Bad Request");
                                 client_wants_keepalive = false;
                             }
                         }
                         else
                         {
-                            response = buildErrorWithCustom(*target_server, 501, "Not Implemented");
+                            std::cerr << "Error: Failed to open file for writing (generic POST): " << fullPath << " (" << strerror(errno) << ")" << std::endl;
+                            response = buildErrorWithCustom(*target_server, 500, "Internal Server Error");
+                            client_wants_keepalive = false;
                         }
                         sendAll(fd, response);
                         if (!client_wants_keepalive)
                         {
-                            toClose.push_back(fd);
+                            g_closing_clients.insert(fd);
                             break;
                         }
 
                         if (reqCount[fd] >= 10)
                         {
-                            toClose.push_back(fd);
+                            g_closing_clients.insert(fd);
                             break;
                         }
                         // recvBuf[fd].clear(); // Handled by loop
                     }
+                    else
+                    {
+                        std::string response = buildErrorWithCustom(*target_server, 501, "Not Implemented");
+                        sendAll(fd, response);
+                        if (!client_wants_keepalive)
+                        {
+                            g_closing_clients.insert(fd);
+                            break;
+                        }
+                    }
                 }
-                // n will be 0 if the client closed the terminal => close the connection
+            }
+                // n will be 0 if the client closed the connection
                 else if (n == 0)
                 {
                     toClose.push_back(fd);
-                    break;
                 }
-                // n will be -1 if the client is not writing anything in the terminal after entering the for (;;)
+                // n will be -1 (error or would block)
                 else
                 {
-                    if (errno == EAGAIN)
-                        break;
-                    if (errno == EINTR)
-                        continue;
-                    perror("recv");
                     toClose.push_back(fd);
-                    break;
+                }
+            }
+
+            // Handle client write events
+            if (clients.find(fd) != clients.end() && (events[n].events & EPOLLOUT))
+            {
+                if (!g_sendBuf[fd].empty())
+                {
+                    ssize_t sent = send(fd, g_sendBuf[fd].c_str(), g_sendBuf[fd].size(), MSG_DONTWAIT);
+                    if (sent > 0)
+                    {
+                        g_sendBuf[fd] = g_sendBuf[fd].substr(sent);
+                    }
+                    else if (sent == 0)
+                    {
+                        toClose.push_back(fd);
+                    }
+                    else if (sent == -1)
+                    {
+                        toClose.push_back(fd);
+                    }
                 }
             }
         }
+
+        // Check for clients that can be closed now
+        for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it)
+        {
+            int fd = *it;
+            if (g_sendBuf[fd].empty() && g_closing_clients.count(fd))
+            {
+                toClose.push_back(fd);
+                g_closing_clients.erase(fd);
+            }
+        }
+
+        // Remove duplicates from toClose
+        std::sort(toClose.begin(), toClose.end());
+        toClose.erase(std::unique(toClose.begin(), toClose.end()), toClose.end());
 
         // Close marked clients
         for (size_t i = 0; i < toClose.size(); ++i)
         {
             int fd = toClose[i];
+            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
             clients.erase(fd);
             recvBuf.erase(fd);
             reqCount.erase(fd);
@@ -980,14 +1086,15 @@ int startServers(const Servers &servers)
         }
     }
 
-    //Cleanup
+    // Close epoll descriptor
+    close(epoll_fd);
+
+    // Cleanup
     std::cout << "\n[SHUTDOWN] Closing server sockets..." << std::endl;
     for (size_t i = 0; i < g_server_socks.size(); ++i)
     {
         if (g_server_socks[i] != -1)
-        {
             close(g_server_socks[i]);
-        }
     }
     g_server_socks.clear();
 

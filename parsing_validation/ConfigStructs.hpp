@@ -47,22 +47,17 @@ struct Server
     Location locations[10];
     int location_count;
 
-    Server()
+    Server() 
     {
-        listen = 8080;
-        host = "127.0.0.1";
-        // Default to a reasonably large max body size (e.g. 50 MB)
-        max_size = "50m";
-        server_name = "localhost";
-        root = "./www";
-        index = "index.html";
+        listen = 0;
+        host = "";
+        max_size = "";
+        server_name = "";
+        root = "";
+        index = "";
         location_count = 0;
-
-        // Default error pages
-        error_pages[404] = "/errors/404.html";
-        error_pages[500] = "/errors/500.html";
-        error_pages[505] = "/errors/505.html";
     }
+
 };
 
 // Container for multiple server configurations

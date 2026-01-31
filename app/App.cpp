@@ -4,7 +4,6 @@
 #include <vector>
 #include <unistd.h>
 
-#include "ArgValidation.hpp"
 #include "ConfigSource.hpp"
 
 #include "../logging/Logger.hpp"
@@ -18,13 +17,27 @@ static std::vector<std::string> collectArgs(int argc, char* argv[]) {
     return args;
 }
 
+static bool validateArgs(const std::vector<std::string>& args, std::string& error) {
+    if (args.empty()) 
+    {
+        error = "missing configuration file argument";
+        return false;
+    }
+    if (args.size() > 1) 
+    {
+        error = "too many arguments";
+        return false;
+    }
+    return true;
+}
+
 int App::run(int argc, char* argv[]) {
     std::string error;
     std::vector<std::string> args = collectArgs(argc, argv);
     if (!validateArgs(args, error)) 
     {
         std::cerr << "[ERROR] " << error << "\n";
-        std::cerr << "Usage: " << argv[0] << " [config.conf]\n";
+        std::cerr << "Correct usage: ./webserv [config file]\n";
         return 1;
     }
     FileConfigSource fileSrc(args[0]);

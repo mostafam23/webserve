@@ -1,8 +1,11 @@
 #include "HttpUtils.hpp"
+#include "../utils/Utils.hpp"
 #include <sstream>
 #include <iostream>
 #include <string>
-#include <cstdlib> // Added for strtol
+#include <cstdlib>
+#include <cctype>
+#include <sstream>
 
 std::string intToString(int n) {
     std::ostringstream oss;
@@ -42,16 +45,16 @@ size_t getRequestLength(const char *buffer, size_t length)
     {
         std::string te = it->second;
         for (size_t i = 0; i < te.size(); ++i)
-            te[i] = tolower(te[i]);
+            te[i] = ft_tolower(te[i]);
         if (te.find("chunked") != std::string::npos) 
         {
             // Check if the zero chunk is right at the beginning of the body (empty body case)
-            if (length >= (size_t)headers_end + 5 && strncmp(buffer + headers_end, "0\r\n\r\n", 5) == 0)
+            if (length >= (size_t)headers_end + 5 && ft_strncmp(buffer + headers_end, "0\r\n\r\n", 5) == 0)
             {
                 return (size_t)headers_end + 5;
             }
             // Lenient check for LF only
-            if (length >= (size_t)headers_end + 4 && strncmp(buffer + headers_end, "0\n\n", 4) == 0)
+            if (length >= (size_t)headers_end + 4 && ft_strncmp(buffer + headers_end, "0\n\n", 4) == 0)
             {
                 return (size_t)headers_end + 4;
             }
@@ -118,28 +121,25 @@ std::string buildErrorResponse(int code, const std::string &message)
     return resp.str();
 }
 
-#include <cctype>
-#include <sstream>
-
 std::map<std::string, std::string> parseHeaders(const std::string &request) {
     std::map<std::string, std::string> headers;
     std::istringstream stream(request);
     std::string line;
-    std::getline(stream, line); //This reads up to the first newline character (\n) in the stream  but does not include the '\n' in the resulting string.
-    while (std::getline(stream, line)) {
+    ft_getline(stream, line); //This reads up to the first newline character (\n) in the stream  but does not include the '\n' in the resulting string.
+    while (ft_getline(stream, line)) {
         if (!line.empty() && line[line.size() - 1] == '\r')
             line.erase(line.size() - 1);
         if (line.empty())
             break;
         size_t colon = line.find(':');
         if (colon != std::string::npos) {
-            std::string key = line.substr(0, colon);
-            std::string value = line.substr(colon + 1);
+            std::string key = ft_substr(line, 0, colon);
+            std::string value = ft_substr(line, colon + 1);
             size_t start = value.find_first_not_of(" \t");
             if (start != std::string::npos)
-                value = value.substr(start);
+                value = ft_substr(value, start);
             for (size_t i = 0; i < key.size(); ++i)
-                key[i] = tolower(key[i]);
+                key[i] = ft_tolower(key[i]);
             headers[key] = value;
         }
     }
@@ -156,9 +156,9 @@ std::string unchunkBody(const std::string &body)
         if (crlf == std::string::npos)
             break;
         
-        std::string hexLen = body.substr(i, crlf - i);
+        std::string hexLen = ft_substr(body, i, crlf - i);
         char *end;
-        long len = std::strtol(hexLen.c_str(), &end, 16);
+        long len = ft_strtol(hexLen.c_str(), &end, 16);
         
         if (len == 0)
             break; // Last chunk
@@ -167,7 +167,7 @@ std::string unchunkBody(const std::string &body)
         if (i + len > body.size())
             break; // Malformed or incomplete
 
-        decoded.append(body.substr(i, len));
+        decoded.append(ft_substr(body, i, len));
         i += len + 2; // Skip data + CRLF
     }
     return decoded;
