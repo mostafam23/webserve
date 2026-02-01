@@ -26,7 +26,6 @@
 #include <sys/wait.h>
 #include <dirent.h>
 #include <signal.h>
-#include <sys/epoll.h>
 
 // Globals for non-blocking I/O
 static std::map<int, std::string> g_sendBuf;
@@ -341,196 +340,143 @@ int startServers(const Servers &servers)
     std::map<int, int> reqCount;
     std::set<int> clients;
 
-    // Create epoll instance
-    int epoll_fd = epoll_create1(0);
-    if (epoll_fd == -1)
-    {
-        ft_perror("epoll_create1");
-        for (size_t j = 0; j < g_server_socks.size(); ++j)
-        {
-            close(g_server_socks[j]);
-        }
-        return EXIT_FAILURE;
-    }
-
-    // Add all server sockets to epoll
-    for (size_t i = 0; i < g_server_socks.size(); ++i)
-    {
-        if (g_server_socks[i] != -1)
-        {
-            struct epoll_event ev;
-            ev.events = EPOLLIN;
-            ev.data.fd = g_server_socks[i];
-            if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, g_server_socks[i], &ev) == -1)
-            {
-                ft_perror("epoll_ctl: server socket");
-                close(epoll_fd);
-                for (size_t j = 0; j < g_server_socks.size(); ++j)
-                {
-                    close(g_server_socks[j]);
-                }
-                return EXIT_FAILURE;
-            }
-        }
-    }
-
-    const int MAX_EVENTS = 1024;
-    struct epoll_event events[MAX_EVENTS];
-
     while (!g_shutdown)
     {
-        // Update epoll interest for clients with pending writes
+        fd_set readfds;
+        fd_set writefds;
+
+        FD_ZERO(&readfds);
+        FD_ZERO(&writefds);
+
+        int maxfd = -1;
+
+        // Add all server sockets to select set
+        for (size_t i = 0; i < g_server_socks.size(); ++i)
+        {
+            if (g_server_socks[i] != -1)
+            {
+                FD_SET(g_server_socks[i], &readfds);
+                if (g_server_socks[i] > maxfd)
+                {
+                    maxfd = g_server_socks[i];
+                }
+            }
+        }
+
+        // Add all client sockets to select set
         for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it)
         {
             int fd = *it;
-            struct epoll_event ev;
-            ev.data.fd = fd;
-            ev.events = EPOLLIN;
+            FD_SET(fd, &readfds);
             if (!g_sendBuf[fd].empty())
-                ev.events |= EPOLLOUT;
-            epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev);
+                FD_SET(fd, &writefds);
+
+            if (fd > maxfd)
+            {
+                maxfd = fd;
+            }
         }
 
-        int nfds = epoll_wait(epoll_fd, events, MAX_EVENTS, 1000);
-        if (nfds < 0)
+        // Add CGI pipes to select set
+        for (std::map<int, CgiSession>::iterator it = cgi_sessions.begin(); it != cgi_sessions.end(); ++it)
         {
-            if (errno == EINTR) // control + c
-                continue;
+            int fd = it->first;
+            FD_SET(fd, &readfds);
+            if (fd > maxfd)
+                maxfd = fd;
+        }
 
-            ft_perror("epoll_wait");
+        if (maxfd == -1)
+        {
+            // No valid file descriptors
             break;
         }
 
-        // Process events
-        for (int ev_idx = 0; ev_idx < nfds; ++ev_idx)
-        {
-            int fd = events[ev_idx].data.fd;
-            
-            // Check if this is a server socket
-            bool is_server_sock = false;
-            size_t server_idx = 0;
-            for (size_t i = 0; i < g_server_socks.size(); ++i)
-            {
-                if (g_server_socks[i] == fd)
-                {
-                    is_server_sock = true;
-                    server_idx = i;
-                    break;
-                }
-            }
+        timeval tv;
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
 
-            // Handle new connections on server socket
-            if (is_server_sock && (events[ev_idx].events & EPOLLIN))
+        int ready = select(maxfd + 1, &readfds, &writefds, NULL, &tv);
+        if (ready < 0)
+        {
+            if (errno == EINTR) // cntrol + c
+                continue;
+
+            ft_perror("select");
+            break;
+        }
+
+        // Check for new connections on any server socket
+        for (size_t i = 0; i < g_server_socks.size(); ++i)
+        {
+            // New connections
+            // when a server socket is ready to read yaany a new client is ready to connect
+            // if (FD_ISSET(3, &readfds)) { ... }  // is server socket ready? 3 yaany server-socket
+            /*
+            ✅ A new client is connecting
+            ❗ Not when a client sends data
+            ❗ Not when server wants to write
+            ✅ Only when a new TCP connection request arrives
+            */
+            if (g_server_socks[i] != -1 && FD_ISSET(g_server_socks[i], &readfds))
             {
-                sockaddr_in client_addr;
+                sockaddr_in client_addr; // Creates a structure to store the connecting client’s IP and port
                 socklen_t client_len = sizeof(client_addr);
 
                 // Accept all pending connections
                 int accepted = 0;
                 while (true)
                 {
-                    // Throttle: If we have too many clients, stop accepting
-                    if (clients.size() >= 10000)
+                    // Throttle: If we are near the FD limit, stop accepting.
+                    // Let clients wait in the backlog (safe) rather than accepting and closing (error).
+                    if (clients.size() >= 800)
                     {
                         break;
                     }
 
-                    int client_sock = accept(fd, (sockaddr *)&client_addr, &client_len);
+                    int client_sock = accept(g_server_socks[i], (sockaddr *)&client_addr, &client_len);
                     if (client_sock < 0)
                     {
                         // No more connections pending or error
                         break;
                     }
 
-                    setNonBlocking(client_sock);
-                    
-                    // Add client to epoll
-                    struct epoll_event ev;
-                    ev.events = EPOLLIN;
-                    ev.data.fd = client_sock;
-                    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_sock, &ev) == -1)
+                    if (client_sock >= FD_SETSIZE)
                     {
-                        ft_perror("epoll_ctl: client socket");
+                        // Should rarely happen due to clients.size() check, but safety first
                         close(client_sock);
-                        break;
+                    }
+                    else
+                    {
+                        setNonBlocking(client_sock);
+                        clients.insert(client_sock);
+                        recvBuf[client_sock] = std::string();
+                        reqCount[client_sock] = 0;
+                        addClient(client_sock, i + 1);
                     }
 
-                    clients.insert(client_sock);
-                    recvBuf[client_sock] = std::string();
-                    reqCount[client_sock] = 0;
-                    addClient(client_sock, server_idx + 1);
-
-                    // Limit acceptance to prevent starvation
+                    // Limit acceptance to prevent starvation of other sockets
                     accepted++;
                     if (accepted > 500)
                         break;
                 }
-                continue;
             }
         }
 
-        // Handle CGI timeouts
+        // Handle CGI Output
         std::vector<int> cgiToClose;
         for (std::map<int, CgiSession>::iterator it = cgi_sessions.begin(); it != cgi_sessions.end(); ++it)
         {
             int pipeFd = it->first;
             CgiSession &session = it->second;
-            
-            if (time(NULL) - session.startTime >= 5)
-            {
-                kill(session.pid, SIGKILL);
-                waitpid(session.pid, NULL, 0);
-                std::string body = "<html><head><title>508 Loop Detected</title></head><body><h1>508 Loop Detected</h1><p>The CGI script took too long to execute.</p></body></html>";
-                std::ostringstream ss;
-                ss << "HTTP/1.1 508 Loop Detected\r\n"
-                   << "Content-Type: text/html\r\n"
-                   << "Content-Length: " << body.size() << "\r\n"
-                   << "Connection: close\r\n\r\n"
-                   << body;
-                std::string response = ss.str();
-                sendAll(session.clientFd, response);
-                if (!session.keepAlive)
-                    g_closing_clients.insert(session.clientFd);
-                cgiToClose.push_back(pipeFd);
-            }
-        }
 
-        for (size_t i = 0; i < cgiToClose.size(); ++i)
-        {
-            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, cgiToClose[i], NULL);
-            close(cgiToClose[i]);
-            cgi_sessions.erase(cgiToClose[i]);
-        }
-
-        // Process all events
-        std::vector<int> toClose;
-        for (int n = 0; n < nfds; ++n)
-        {
-            int fd = events[n].data.fd;
-            
-            // Skip if server socket (already handled)
-            bool is_server_sock = false;
-            for (size_t i = 0; i < g_server_socks.size(); ++i)
+            if (FD_ISSET(pipeFd, &readfds))
             {
-                if (g_server_socks[i] == fd)
-                {
-                    is_server_sock = true;
-                    break;
-                }
-            }
-            if (is_server_sock)
-                continue;
-
-            // Handle CGI pipe output
-            if (cgi_sessions.find(fd) != cgi_sessions.end() && (events[n].events & EPOLLIN))
-            {
-                CgiSession &session = cgi_sessions[fd];
-                int pipeFd = fd;
                 char buffer[4096];
-                ssize_t n_read = read(pipeFd, buffer, sizeof(buffer));
-                if (n_read > 0)
+                ssize_t n = read(pipeFd, buffer, sizeof(buffer));
+                if (n > 0)
                 {
-                    session.responseBuffer.append(buffer, n_read);
+                    session.responseBuffer.append(buffer, n);
                 }
                 else
                 {
@@ -592,22 +538,47 @@ int startServers(const Servers &servers)
                     sendAll(session.clientFd, response);
                     if (!session.keepAlive)
                         g_closing_clients.insert(session.clientFd);
-                    
-                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, pipeFd, NULL);
-                    close(pipeFd);
-                    cgi_sessions.erase(pipeFd);
+                    cgiToClose.push_back(pipeFd);
+                    continue;
                 }
+            }
+
+            // Timeout
+            if (time(NULL) - session.startTime >= 5)
+            {
+                kill(session.pid, SIGKILL);
+                waitpid(session.pid, NULL, 0);
+                std::string body = "<html><head><title>508 Loop Detected</title></head><body><h1>508 Loop Detected</h1><p>The CGI script took too long to execute.</p></body></html>";
+                std::ostringstream ss;
+                ss << "HTTP/1.1 508 Loop Detected\r\n"
+                   << "Content-Type: text/html\r\n"
+                   << "Content-Length: " << body.size() << "\r\n"
+                   << "Connection: close\r\n\r\n"
+                   << body;
+                std::string response = ss.str();
+                sendAll(session.clientFd, response);
+                if (!session.keepAlive)
+                    g_closing_clients.insert(session.clientFd);
+                cgiToClose.push_back(pipeFd);
+            }
+        }
+
+        for (size_t i = 0; i < cgiToClose.size(); ++i)
+        {
+            close(cgiToClose[i]);
+            cgi_sessions.erase(cgiToClose[i]);
+        }
+
+        std::vector<int> toClose;
+        for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it)
+        {
+            int fd = *it;
+            if (!FD_ISSET(fd, &readfds))
+            {
                 continue;
             }
 
-            // Skip if CGI pipe (already handled)
-            if (cgi_sessions.find(fd) != cgi_sessions.end())
-                continue;
-
-            // Handle client read events
-            if (clients.find(fd) != clients.end() && (events[n].events & EPOLLIN))
-            {
-                char buffer[65536];
+            char buffer[65536];
             // Read only once per select event to avoid errno usage
             ssize_t n = recv(fd, buffer, sizeof(buffer), 0); // 0 in the last argument to make the recv works normally wohtout options
             if (n > 0)
@@ -670,20 +641,20 @@ int startServers(const Servers &servers)
                     if (version == "HTTP/1.0" && headers["connection"] != "Keep-Alive")
                         client_wants_keepalive = false;
                     // Log request
-                    // std::ostringstream rlog;
-                    // int server_num = getClientServer(fd);
-                    // rlog << "[REQUEST #" << reqCount[fd] << "] Client " << fd;
-                    // if (server_num > 0)
-                    // {
-                    //    rlog << " (Server " << server_num << "): ";
-                    // }
-                    // else
-                    // {
-                    //    rlog << ": ";
-                    // }
-                    // rlog << method << " " << path << " " << version
-                    //     << (client_wants_keepalive ? " (keep-alive)" : " (close)");
-                    // Logger::request(rlog.str());
+                    std::ostringstream rlog;
+                    int server_num = getClientServer(fd);
+                    rlog << "[REQUEST #" << reqCount[fd] << "] Client " << fd;
+                    if (server_num > 0)
+                    {
+                       rlog << " (Server " << server_num << "): ";
+                    }
+                    else
+                    {
+                       rlog << ": ";
+                    }
+                    rlog << method << " " << path << " " << version
+                        << (client_wants_keepalive ? " (keep-alive)" : " (close)");
+                    Logger::request(rlog.str());
                     // Routing: match location, enforce methods, resolve root and path
                     const Location *loc = matchLocation(*target_server, path, method);
 
@@ -832,25 +803,7 @@ int startServers(const Servers &servers)
                                 if (session.pipeOut != -1)
                                 {
                                     session.keepAlive = client_wants_keepalive;
-                                    
-                                    // Add CGI pipe to epoll
-                                    struct epoll_event ev;
-                                    ev.events = EPOLLIN;
-                                    ev.data.fd = session.pipeOut;
-                                    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, session.pipeOut, &ev) != -1)
-                                    {
-                                        cgi_sessions[session.pipeOut] = session;
-                                    }
-                                    else
-                                    {
-                                        close(session.pipeOut);
-                                        kill(session.pid, SIGKILL);
-                                        waitpid(session.pid, NULL, 0);
-                                        std::string error = buildErrorWithCustom(*target_server, 500, "Internal Server Error");
-                                        sendAll(fd, error);
-                                        if (!client_wants_keepalive)
-                                            g_closing_clients.insert(fd);
-                                    }
+                                    cgi_sessions[session.pipeOut] = session;
                                     continue;
                                 }
                                 else
@@ -1024,44 +977,39 @@ int startServers(const Servers &servers)
                     }
                 }
             }
-                // n will be 0 if the client closed the connection
-                else if (n == 0)
-                {
-                    toClose.push_back(fd);
-                }
-                // n will be -1 (error or would block)
-                else
-                {
-                    toClose.push_back(fd);
-                }
-            }
-
-            // Handle client write events
-            if (clients.find(fd) != clients.end() && (events[n].events & EPOLLOUT))
+            // n will be 0 if the client closed the connection
+            else if (n == 0)
             {
-                if (!g_sendBuf[fd].empty())
-                {
-                    ssize_t sent = send(fd, g_sendBuf[fd].c_str(), g_sendBuf[fd].size(), MSG_DONTWAIT);
-                    if (sent > 0)
-                    {
-                        g_sendBuf[fd] = g_sendBuf[fd].substr(sent);
-                    }
-                    else if (sent == 0)
-                    {
-                        toClose.push_back(fd);
-                    }
-                    else if (sent == -1)
-                    {
-                        toClose.push_back(fd);
-                    }
-                }
+                toClose.push_back(fd);
+            }
+            // n will be -1 (error or would block)
+            else
+            {
+                toClose.push_back(fd);
             }
         }
 
-        // Check for clients that can be closed now
+        // Handle writable clients
         for (std::set<int>::const_iterator it = clients.begin(); it != clients.end(); ++it)
         {
             int fd = *it;
+            if (FD_ISSET(fd, &writefds) && !g_sendBuf[fd].empty())
+            {
+                ssize_t sent = send(fd, g_sendBuf[fd].c_str(), g_sendBuf[fd].size(), MSG_DONTWAIT);
+                if (sent > 0)
+                {
+                    g_sendBuf[fd] = g_sendBuf[fd].substr(sent);
+                }
+                else if (sent == 0)
+                {
+                    toClose.push_back(fd);
+                }
+                else if (sent == -1)
+                {
+                    toClose.push_back(fd);
+                }
+            }
+            // Check if we can close now
             if (g_sendBuf[fd].empty() && g_closing_clients.count(fd))
             {
                 toClose.push_back(fd);
@@ -1077,7 +1025,6 @@ int startServers(const Servers &servers)
         for (size_t i = 0; i < toClose.size(); ++i)
         {
             int fd = toClose[i];
-            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
             clients.erase(fd);
             recvBuf.erase(fd);
             reqCount.erase(fd);
@@ -1085,9 +1032,6 @@ int startServers(const Servers &servers)
             close(fd);
         }
     }
-
-    // Close epoll descriptor
-    close(epoll_fd);
 
     // Cleanup
     std::cout << "\n[SHUTDOWN] Closing server sockets..." << std::endl;
