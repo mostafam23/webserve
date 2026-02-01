@@ -148,6 +148,7 @@ CgiSession CgiHandler::startCgi(const std::string &scriptPath, const std::string
 
         execve(argv[0], (char *const *)argv, envp);
         // If execve returns, it failed - write error to pipe
+        std::cerr << "CGI execve failed " << std::endl;
         const char *error_msg = "Status: 500 Internal Server Error\r\n\r\n";
         write(pipe_out[1], error_msg, 36);
         close(pipe_out[1]);

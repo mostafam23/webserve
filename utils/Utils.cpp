@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <cstdlib>
 #include <iostream>
+#include <cstdio>
 
 bool isDirectory(const std::string &path)
 {
@@ -35,14 +36,21 @@ std::string generateDirectoryListing(const std::string &path, const std::string 
             if (name == ".")
                 continue;
 
-            std::string href = name;
+            std::string displayName = name;
+            std::string href;
+
+            if (!requestPath.empty() && requestPath[requestPath.size() - 1] == '/')
+                href = requestPath + name;
+            else
+                href = requestPath + "/" + name;
+
             if (isDirectory(path + "/" + name))
             {
                 href += "/";
-                name += "/";
+                displayName += "/";
             }
 
-            oss << "<a href=\"" << href << "\">" << name << "</a><br>";
+            oss << "<a href=\"" << href << "\">" << displayName << "</a><br>";
         }
         closedir(dir);
     }
@@ -344,7 +352,7 @@ int ft_remove(const char *filename)
     if (!filename)
         return -1;
 
-    return unlink(filename);
+    return std::remove(filename);
 }
 
 // File I/O wrappers using allowed functions (open, write, close)
@@ -378,13 +386,5 @@ int ft_file_close(int fd)
 
 void ft_perror(const char *msg)
 {
-    // Custom error handler using strerror (which is in the allowed list)
-    if (msg && *msg)
-    {
-        std::cerr << msg << ": " << strerror(errno) << std::endl;
-    }
-    else
-    {
-        std::cerr << strerror(errno) << std::endl;
-    }
+        std::cerr << msg << std::endl;
 }

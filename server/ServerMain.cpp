@@ -399,7 +399,7 @@ int startServers(const Servers &servers)
         int ready = select(maxfd + 1, &readfds, &writefds, NULL, &tv);
         if (ready < 0)
         {
-            if (errno == EINTR) // cntrol + c
+            if (errno == EINTR) // ctrl + c
                 continue;
 
             ft_perror("select");
@@ -478,19 +478,85 @@ int startServers(const Servers &servers)
                 {
                     session.responseBuffer.append(buffer, n);
                 }
-                else
+                else if(n == 0)
                 {
-                    // EOF or Error
+                    // EOF
                     int status;
                     waitpid(session.pid, &status, 0);
 
                     std::string response;
                     if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
                     {
+                        std::cerr << "CGI Error: Script exited with status " << WEXITSTATUS(status) << std::endl;
                         response = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n";
                     }
                     else if (WIFSIGNALED(status))
                     {
+                        std::cerr << "CGI Error: Script terminated by signal " << WTERMSIG(status) << std::endl;
+                        response = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n";
+                    }
+                    else
+                    {
+                        std::string cgiOutput = session.responseBuffer;
+                        if (cgiOutput.find("HTTP/") == 0)
+                        {
+                            response = cgiOutput;
+                        }
+                        else
+                        {
+                            response = "HTTP/1.1 200 OK\r\n";
+                            bool hasContentLength = false;
+                            std::string lowerCgi = ft_substr(cgiOutput, 0, 1024);
+                            for (size_t i = 0; i < lowerCgi.size(); ++i)
+                                lowerCgi[i] = ft_tolower(lowerCgi[i]);
+
+                            if (lowerCgi.find("content-length:") != std::string::npos)
+                            {
+                                hasContentLength = true;
+                            }
+
+                            if (!hasContentLength)
+                            {
+                                size_t bodyPos = cgiOutput.find("\r\n\r\n");
+                                size_t headerEndLen = 4;
+                                if (bodyPos == std::string::npos)
+                                {
+                                    bodyPos = cgiOutput.find("\n\n");
+                                    headerEndLen = 2;
+                                }
+
+                                size_t bodySize = 0;
+                                if (bodyPos != std::string::npos)
+                                {
+                                    bodySize = cgiOutput.size() - (bodyPos + headerEndLen);
+                                }
+                                std::ostringstream oss;
+                                oss << "Content-Length: " << bodySize << "\r\n";
+                                response += oss.str();
+                            }
+                            response += cgiOutput;
+                        }
+                    }
+                    sendAll(session.clientFd, response);
+                    if (!session.keepAlive)
+                        g_closing_clients.insert(session.clientFd);
+                    cgiToClose.push_back(pipeFd);
+                }
+                else
+                {
+                    //Error
+                    int status;
+                    waitpid(session.pid, &status, 0);
+
+                    std::string response;
+                    if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+                    {
+                        std::cerr << "CGI Error: Script exited with status " << WEXITSTATUS(status) << std::endl;
+                        response = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n";
+                    }
+                    else if (WIFSIGNALED(status))
+                    {
+                        std::cerr << "CGI Error: Script terminated by signal " << WTERMSIG(status) << std::endl;
                         response = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n";
                     }
                     else
@@ -546,6 +612,7 @@ int startServers(const Servers &servers)
             // Timeout
             if (time(NULL) - session.startTime >= 5)
             {
+                std::cerr << "CGI Error: Script execution timed out (PID: " << session.pid << ")" << std::endl;
                 kill(session.pid, SIGKILL);
                 waitpid(session.pid, NULL, 0);
                 std::string body = "<html><head><title>508 Loop Detected</title></head><body><h1>508 Loop Detected</h1><p>The CGI script took too long to execute.</p></body></html>";
@@ -947,7 +1014,7 @@ int startServers(const Servers &servers)
                         }
                         else
                         {
-                            std::cerr << "Error: Failed to open file for writing (generic POST): " << fullPath << " (" << strerror(errno) << ")" << std::endl;
+                            std::cerr << "Error: Failed to open file for writing (generic POST): " << fullPath << std::endl;
                             response = buildErrorWithCustom(*target_server, 500, "Internal Server Error");
                             client_wants_keepalive = false;
                         }
@@ -982,7 +1049,7 @@ int startServers(const Servers &servers)
             {
                 toClose.push_back(fd);
             }
-            // n will be -1 (error or would block)
+            // n will be -1 (EAGAIN or EWOULDBLOCK)
             else
             {
                 toClose.push_back(fd);
